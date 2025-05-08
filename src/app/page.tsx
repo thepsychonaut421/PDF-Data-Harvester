@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -12,6 +13,11 @@ import { extractInvoiceData, type ExtractInvoiceInput, type ExtractInvoiceOutput
 
 const MOCK_SCHEMA: AppSchema = defaultAppSchema;
 
+const MOCK_SCHEMA_EXPORTABLE_KEYS = MOCK_SCHEMA.fields
+  .filter(field => field.key !== 'actions')
+  .map(field => field.key as string);
+
+
 const fileToDataUri = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -25,6 +31,7 @@ const fileToDataUri = (file: File): Promise<string> => {
 export default function Home() {
   const [extractedData, setExtractedData] = useState<ExtractedDataItem[]>([]);
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+  const [selectedExportColumns, setSelectedExportColumns] = useState<string[]>(MOCK_SCHEMA_EXPORTABLE_KEYS);
   const { toast } = useToast();
 
   // Load data from localStorage on initial mount
@@ -45,12 +52,28 @@ export default function Home() {
         localStorage.removeItem('pdfHarvesterData'); // Clear corrupted data
       }
     }
+    const storedSelectedColumns = localStorage.getItem('pdfHarvesterSelectedColumns');
+    if (storedSelectedColumns) {
+        try {
+            const parsedColumns = JSON.parse(storedSelectedColumns);
+            if (Array.isArray(parsedColumns) && parsedColumns.every(col => typeof col === 'string')) {
+                setSelectedExportColumns(parsedColumns);
+            }
+        } catch (error) {
+            console.error("Failed to parse stored selected columns:", error);
+        }
+    }
+
   }, []);
 
   // Save data to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('pdfHarvesterData', JSON.stringify(extractedData));
   }, [extractedData]);
+
+  useEffect(() => {
+    localStorage.setItem('pdfHarvesterSelectedColumns', JSON.stringify(selectedExportColumns));
+  }, [selectedExportColumns]);
 
 
   const handleFileUploads = async (files: File[]) => {
@@ -175,16 +198,20 @@ export default function Home() {
       toast({ title: "Nicio dată de exportat", description: "Nu există fișiere procesate sau care necesită validare.", variant: "warning" });
       return;
     }
+
+    if (selectedExportColumns.length === 0) {
+      toast({ title: "Nicio coloană selectată", description: "Vă rugăm selectați cel puțin o coloană pentru a exporta.", variant: "warning" });
+      return;
+    }
     
-    const exportableSchemaFields = MOCK_SCHEMA.fields.filter(field => field.key !== 'actions');
+    const exportableSchemaFields = MOCK_SCHEMA.fields.filter(field => selectedExportColumns.includes(field.key as string));
     const headers = exportableSchemaFields.map(field => field.label);
     
     const rows = relevantData.map(item => {
         return exportableSchemaFields.map(schemaField => {
             let value: any;
              if (schemaField.key === 'fileName') value = item.fileName;
-             // Status is not in extractedValues, handle separately if needed for export, but schema maps it currently.
-             // else if (schemaField.key === 'status') value = item.status;
+             else if (schemaField.key === 'status') value = item.status; // Status is not in extractedValues, but can be exported
              else value = item.extractedValues[schemaField.key as keyof typeof item.extractedValues];
 
             if (schemaField.type === 'products_list' && Array.isArray(value)) {
@@ -218,7 +245,7 @@ export default function Home() {
       title: "Export CSV finalizat",
       description: "Datele au fost exportate cu succes.",
     });
-  }, [extractedData, toast]);
+  }, [extractedData, toast, selectedExportColumns]);
 
   // Clean up blob URLs on component unmount
   useEffect(() => {
@@ -244,6 +271,8 @@ export default function Home() {
           onDeleteItem={handleDeleteItem} 
           onExportCsv={handleExportCsv}
           isLoading={isProcessingFiles && extractedData.some(d => d.status === 'uploading' || d.status === 'processing')}
+          selectedExportColumns={selectedExportColumns}
+          onSelectedExportColumnsChange={setSelectedExportColumns}
         />
       </main>
       <Toaster />

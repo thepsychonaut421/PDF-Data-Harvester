@@ -7,7 +7,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import DataTable from './data-table';
 import type { ExtractedDataItem, AppSchema, PdfStatus } from '@/lib/types';
-import { Download, Filter, Search, AlertTriangle, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Download, Filter, Search, AlertTriangle, CheckCircle2, XCircle, Loader2, ListFilter } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+} from "@/components/ui/dropdown-menu";
 
 interface DataDashboardProps {
   data: ExtractedDataItem[];
@@ -15,10 +23,21 @@ interface DataDashboardProps {
   onUpdateItem: (item: ExtractedDataItem) => void;
   onDeleteItem: (itemId: string) => void; 
   onExportCsv: () => void;
-  isLoading?: boolean; 
+  isLoading?: boolean;
+  selectedExportColumns: string[];
+  onSelectedExportColumnsChange: (keys: string[]) => void;
 }
 
-const DataDashboard: FC<DataDashboardProps> = ({ data, schema, onUpdateItem, onDeleteItem, onExportCsv, isLoading }) => {
+const DataDashboard: FC<DataDashboardProps> = ({ 
+  data, 
+  schema, 
+  onUpdateItem, 
+  onDeleteItem, 
+  onExportCsv, 
+  isLoading,
+  selectedExportColumns,
+  onSelectedExportColumnsChange 
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<PdfStatus | 'all'>('all');
 
@@ -55,10 +74,43 @@ const DataDashboard: FC<DataDashboardProps> = ({ data, schema, onUpdateItem, onD
             <CardTitle className="text-xl text-primary">Dashboard Date Extrase</CardTitle>
             <CardDescription>Vizualizați, editați și exportați datele extrase din fișierele PDF.</CardDescription>
           </div>
-          <Button onClick={onExportCsv} disabled={data.filter(item => item.status === 'processed' || item.status === 'needs_validation').length === 0}>
-            <Download className="mr-2 h-4 w-4" />
-            Exportă CSV
-          </Button>
+          <div className="flex gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <ListFilter className="mr-2 h-4 w-4" />
+                  Selectează Coloane
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[250px]">
+                <DropdownMenuLabel>Coloane pentru Export</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {schema.fields
+                  .filter(field => field.key !== 'actions') // 'actions' column is not exportable
+                  .map(field => (
+                    <DropdownMenuCheckboxItem
+                      key={field.key}
+                      checked={selectedExportColumns.includes(field.key as string)}
+                      onCheckedChange={(checked) => {
+                        const newSelectedColumns = checked
+                          ? [...selectedExportColumns, field.key as string]
+                          : selectedExportColumns.filter(key => key !== field.key);
+                        onSelectedExportColumnsChange(newSelectedColumns);
+                      }}
+                    >
+                      {field.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button 
+              onClick={onExportCsv} 
+              disabled={data.filter(item => item.status === 'processed' || item.status === 'needs_validation').length === 0 || selectedExportColumns.length === 0}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Exportă CSV
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
