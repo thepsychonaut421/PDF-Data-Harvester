@@ -29,8 +29,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ro" suppressHydrationWarning> {/* Added suppressHydrationWarning for themeing */}
-      <body className={`${inter.variable} font-sans antialiased`}> {/* Use the font variable and apply antialiasing */}
+    <html lang="ro" suppressHydrationWarning>
+      <body className={`${inter.variable} font-sans antialiased`}>
         {children}
       </body>
     </html>
