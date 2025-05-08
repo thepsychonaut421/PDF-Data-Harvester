@@ -2,8 +2,8 @@ export type PdfStatus = 'pending' | 'uploading' | 'processing' | 'processed' | '
 
 export interface Product {
   name?: string; 
-  quantity?: number | string; // Allow string for quantities like "1 buc"
-  price?: number | string;    // Allow string for prices like "N/A" or with symbols
+  quantity?: number | string; 
+  price?: number | string;    
   [key: string]: any; 
 }
 
@@ -22,11 +22,11 @@ export interface ExtractedDataItem {
   };
   rawPdfUrl?: string; 
   errorMessage?: string; 
-  activeTemplateId?: string | null; // Changed from activeTemplateName to store the ID
+  activeTemplateId?: string | null; 
 }
 
 export interface SchemaField {
-  key: keyof ExtractedDataItem['extractedValues'] | 'fileName' | 'status' | 'actions' | 'activeTemplateName'; // 'activeTemplateName' is now a derived display key
+  key: keyof ExtractedDataItem['extractedValues'] | 'fileName' | 'status' | 'actions' | 'activeTemplateName'; 
   label: string; 
   type: 'text' | 'number' | 'date' | 'products_list' | 'status' | 'actions'; 
   editable?: boolean; 
@@ -40,10 +40,10 @@ export const defaultAppSchema: AppSchema = {
   fields: [
     { key: 'fileName', label: 'Fișier', type: 'text', editable: false },
     { key: 'status', label: 'Status', type: 'status', editable: false },
-    { key: 'activeTemplateName', label: 'Șablon Utilizat', type: 'text', editable: false }, // Label remains, data derived from activeTemplateId
+    { key: 'activeTemplateName', label: 'Șablon Extragere (Upload)', type: 'text', editable: false }, 
     { key: 'date', label: 'Data Facturii', type: 'date', editable: true },
     { key: 'supplier', label: 'Furnizor', type: 'text', editable: true },
-    { key: 'products', label: 'Produse', type: 'products_list', editable: true },
+    { key: 'products', label: 'Produse (Sumar)', type: 'products_list', editable: true }, // Label changed to indicate this is the summary view
     { key: 'totalPrice', label: 'Valoare Totală', type: 'number', editable: true },
     { key: 'currency', label: 'Monedă', type: 'text', editable: true }, 
     { key: 'documentLanguage', label: 'Limbă Doc.', type: 'text', editable: true },
