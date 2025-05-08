@@ -56,18 +56,21 @@ Please extract the following general invoice details:
 
 For the 'products' array, each item in this array should be an object representing a single product or line item.
 {{#if lineItemColumns}}
-Extract the following specific columns for each line item: {{#each lineItemColumns}}'{{this}}'{{#unless @last}}, {{/unless}}{{/each}}.
-The keys in each product object MUST correspond to these requested column names. For example, if lineItemColumns is ['Artikelnummer', 'Bezeichnung', 'Menge'], a product item should look like: { "Artikelnummer": "ART123", "Bezeichnung": "Product X", "Menge": 5 }.
-In addition to these custom columns, if any of the requested lineItemColumns semantically match 'name' (for product description), 'quantity' (for item count), or 'price' (for unit price), you MUST also populate these standard fields ('name', 'quantity', 'price') in the product object. For example:
-- If a column like 'Artikelbezeichnung', 'Bezeichnung', 'Descriere Produs', or 'Product Description' is requested, its value should also be placed in the 'name' field.
-- If a column like 'Menge', 'Anzahl', 'Cantitate', or 'Quantity' is requested, its value should also be placed in the 'quantity' field (ensure it's a number).
-- If a column like 'Einzelpreis', 'Preis pro Einheit', 'Pret Unitar', or 'Unit Price' is requested, its value should also be placed in the 'price' field (ensure it's a number).
-If a standard field (name, quantity, price) does not have a corresponding semantic match in the lineItemColumns, it can be omitted from the product object.
-If a value for a requested column is not found on a line item, you may omit that key from the product object for that item.
+You have been provided with specific 'lineItemColumns': {{#each lineItemColumns}}'{{this}}'{{#unless @last}}, {{/unless}}{{/each}}.
+For each product/line item, you MUST create an object where the keys are EXACTLY these 'lineItemColumns'.
+For example, if lineItemColumns is ['Artikelnummer', 'Bezeichnung', 'Menge'], a product item MUST look like: { "Artikelnummer": "ART123", "Bezeichnung": "Product X", "Menge": 5.0 }.
+If a value for a requested column (from 'lineItemColumns') is not found on a line item, you MUST include the key in the product object with a value of null. DO NOT OMIT THE KEY.
+
+In addition to these custom columns (which are primary):
+- If a column from 'lineItemColumns' (e.g., 'Artikelbezeichnung', 'Bezeichnung', 'Descriere Produs', or 'Product Description') semantically matches a product's name/description, its value MUST also be populated in a separate standard 'name' field in the product object.
+- If a column from 'lineItemColumns' (e.g., 'Menge', 'Anzahl', 'Cantitate', or 'Quantity') semantically matches a product's quantity, its value MUST also be populated in a separate standard 'quantity' field (ensure it's a number). If the value is not numeric, attempt to parse it or set 'quantity' to null.
+- If a column from 'lineItemColumns' (e.g., 'Einzelpreis', 'Preis pro Einheit', 'Pret Unitar', or 'Unit Price') semantically matches a product's unit price, its value MUST also be populated in a separate standard 'price' field (ensure it's a number). If the value is not numeric, attempt to parse it or set 'price' to null.
+
+The presence of these standard fields (name, quantity, price) is secondary. The primary structure of product objects MUST use the keys from 'lineItemColumns'. If a standard field does not have a corresponding semantic match in 'lineItemColumns', it can be omitted (unless 'lineItemColumns' itself directly contains 'name', 'quantity', or 'price', in which case they act as primary custom columns).
 {{else}}
 For each product/line item, extract 'name', 'quantity', and 'price' if available.
 The product object should look like: { "name": "Product Name", "quantity": 1, "price": 10.99 }
-If a value for name, quantity, or price is not found for a line item, you may omit that key from the product object or set it to null if appropriate.
+If a value for name, quantity, or price is not found for a line item, you may set it to null in the product object.
 {{/if}}
 If no products are listed on the invoice, the 'products' field can be an empty array or omitted.
 
@@ -94,3 +97,5 @@ export async function extractInvoiceData(input: ExtractInvoiceInput): Promise<Ex
   const result = await extractInvoiceDataFlow(input);
   return result;
 }
+
+    

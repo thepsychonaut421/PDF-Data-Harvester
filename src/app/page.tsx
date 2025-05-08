@@ -18,11 +18,6 @@ import { Settings, FileText } from 'lucide-react';
 
 const MOCK_SCHEMA: AppSchema = defaultAppSchema;
 
-const MOCK_SCHEMA_EXPORTABLE_KEYS = MOCK_SCHEMA.fields
-  .filter(field => field.key !== 'actions')
-  .map(field => field.key as string);
-
-
 const fileToDataUri = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -36,7 +31,9 @@ const fileToDataUri = (file: File): Promise<string> => {
 export default function Home() {
   const [extractedData, setExtractedData] = useState<ExtractedDataItem[]>([]);
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
-  const [selectedExportColumns, setSelectedExportColumns] = useState<string[]>(MOCK_SCHEMA_EXPORTABLE_KEYS);
+  const [selectedExportColumns, setSelectedExportColumns] = useState<string[]>(
+     defaultAppSchema.fields.filter(field => field.key !== 'actions').map(field => field.key as string)
+  );
   const { toast } = useToast();
 
   const [templates, setTemplates] = useState<InvoiceTemplate[]>([]);
@@ -85,10 +82,10 @@ export default function Home() {
     }
 
     const storedSelectedTemplateId = localStorage.getItem('pdfHarvesterSelectedTemplateId');
-    if (storedSelectedTemplateId && storedSelectedTemplateId !== "null") { // Check for "null" string
+    if (storedSelectedTemplateId && storedSelectedTemplateId !== "null") { 
         setSelectedTemplateId(storedSelectedTemplateId);
     } else {
-        setSelectedTemplateId(null); // Ensure it's truly null if not found or "null"
+        setSelectedTemplateId(null); 
     }
 
   }, []);
@@ -110,7 +107,6 @@ export default function Home() {
     if (selectedTemplateId) {
       localStorage.setItem('pdfHarvesterSelectedTemplateId', selectedTemplateId);
     } else {
-      // Store "null" explicitly or remove, depending on desired behavior for deselection
       localStorage.setItem('pdfHarvesterSelectedTemplateId', "null"); 
     }
   }, [selectedTemplateId]);
@@ -126,32 +122,31 @@ export default function Home() {
     if (isProcessingFiles) return;
     setIsProcessingFiles(true);
 
-    const currentTemplate = selectedTemplateId ? templates.find(t => t.id === selectedTemplateId) : null;
+    const currentUploadTemplate = selectedTemplateId ? templates.find(t => t.id === selectedTemplateId) : null;
 
     const newUploadItems: UploadQueueItem[] = files.map(file => ({
       id: `${file.name}-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
       fileName: file.name,
       status: 'uploading' as PdfStatus,
-      extractedValues: {}, // Initialize with an empty object
+      extractedValues: {}, 
       rawPdfUrl: URL.createObjectURL(file),
       fileObject: file, 
     }));
     
-    // Add to local state immediately with 'uploading' status
     const itemsToDisplay = newUploadItems.map(item => ({
         id: item.id,
         fileName: item.fileName,
         status: item.status,
         rawPdfUrl: item.rawPdfUrl,
         extractedValues: item.extractedValues,
-        activeTemplateName: currentTemplate?.name || null
+        activeTemplateName: currentUploadTemplate?.name || null
     }));
     setExtractedData(prev => [...itemsToDisplay, ...prev.filter(existingItem => !newUploadItems.find(newItem => newItem.id === existingItem.id))]);
 
 
     toast({
       title: "Procesare începută",
-      description: `${files.length} fișier(e) trimise ${currentTemplate ? `folosind șablonul "${currentTemplate.name}"` : 'cu extragere standard'}.`,
+      description: `${files.length} fișier(e) trimise ${currentUploadTemplate ? `folosind șablonul "${currentUploadTemplate.name}"` : 'cu extragere standard'}.`,
     });
 
     for (const item of newUploadItems) {
@@ -161,7 +156,7 @@ export default function Home() {
         const pdfDataUri = await fileToDataUri(item.fileObject);
         const aiInput: ExtractInvoiceInput = { 
           pdfDataUri,
-          lineItemColumns: currentTemplate?.columns 
+          lineItemColumns: currentUploadTemplate?.columns 
         };
         const aiOutput: ExtractInvoiceOutput | null = await extractInvoiceData(aiInput);
 
@@ -170,7 +165,7 @@ export default function Home() {
             date: aiOutput.date,
             supplier: aiOutput.supplier,
             products: aiOutput.products || [],
-            totalPrice: aiOutput.totalPrice === undefined ? null : aiOutput.totalPrice,
+            totalPrice: aiOutput.totalPrice, // Schema expects number | null | undefined
             currency: aiOutput.currency,
             documentLanguage: aiOutput.documentLanguage,
           };
@@ -181,7 +176,7 @@ export default function Home() {
             rawPdfUrl: item.rawPdfUrl,
             status: 'processed' as PdfStatus, 
             extractedValues,
-            activeTemplateName: currentTemplate?.name || null,
+            activeTemplateName: currentUploadTemplate?.name || null,
           };
           setExtractedData(prev => prev.map(d => d.id === item.id ? processedItem : d));
           toast({
@@ -198,7 +193,7 @@ export default function Home() {
             status: 'needs_validation' as PdfStatus, 
             errorMessage: "AI-ul nu a putut extrage datele sau a returnat un răspuns gol.",
             extractedValues: {},
-            activeTemplateName: currentTemplate?.name || null,
+            activeTemplateName: currentUploadTemplate?.name || null,
           };
           setExtractedData(prev => prev.map(d => d.id === item.id ? validationItem : d));
           toast({
@@ -216,7 +211,7 @@ export default function Home() {
             status: 'error' as PdfStatus, 
             errorMessage: error.message || "A apărut o eroare la procesarea AI.",
             extractedValues: {},
-            activeTemplateName: currentTemplate?.name || null,
+            activeTemplateName: currentUploadTemplate?.name || null,
         };
         setExtractedData(prev => prev.map(d => d.id === item.id ? errorItem : d));
         toast({
@@ -267,46 +262,48 @@ export default function Home() {
     
     const exportableSchemaFields = MOCK_SCHEMA.fields.filter(field => selectedExportColumns.includes(field.key as string));
     const headers = exportableSchemaFields.map(field => field.label);
-
-    // Get the currently selected template in the UI for formatting product lines
-    const currentGlobalUploadTemplate = selectedTemplateId ? templates.find(t => t.id === selectedTemplateId) : null;
     
     const rows = relevantData.map(item => {
         return exportableSchemaFields.map(schemaField => {
             let value: any;
              if (schemaField.key === 'fileName') value = item.fileName;
              else if (schemaField.key === 'status') value = item.status;
-             else if (schemaField.key === 'activeTemplateName') value = item.activeTemplateName || 'Standard'; // This still reflects how item was processed
+             else if (schemaField.key === 'activeTemplateName') value = item.activeTemplateName || 'Standard';
              else value = item.extractedValues[schemaField.key as keyof typeof item.extractedValues];
 
             if (schemaField.key === 'products' && Array.isArray(value)) {
               const currency = item.extractedValues.currency || '';
               
-              // Determine which template to use for formatting this item's products
-              // Prioritize the globally selected template for export, otherwise use the item's original processing template
-              let templateForProductFormat = currentGlobalUploadTemplate;
-              if (!templateForProductFormat) {
-                  templateForProductFormat = item.activeTemplateName ? templates.find(t => t.name === item.activeTemplateName) : null;
-              }
+              // ALWAYS use the template that was active when this specific item was processed.
+              const processingTemplate = item.activeTemplateName ? templates.find(t => t.name === item.activeTemplateName) : null;
               
               return value.map((p: Product) => { 
-                if (templateForProductFormat && templateForProductFormat.columns.length > 0) {
-                  return templateForProductFormat.columns.map(colKey => {
-                     const colValue = p[colKey];
-                     if (colValue === undefined || colValue === null) return '';
-                     if (typeof colValue === 'number' && (colKey.toLowerCase().includes('price') || colKey.toLowerCase().includes('preis') || colKey.toLowerCase().includes('valoare') || colKey.toLowerCase().includes('total') || colKey.toLowerCase().includes('sum') || colKey.toLowerCase().includes('betrag'))) {
+                if (processingTemplate && processingTemplate.columns.length > 0) {
+                  // If a processing template with columns was used, export based on those columns
+                  return processingTemplate.columns.map(colKey => {
+                     const colValue = p[colKey]; // AI should provide these keys
+                     if (colValue === undefined || colValue === null) return ''; // Handle missing/null values explicitly
+                     // Format numbers with currency if they are price-like columns based on name
+                     if (typeof colValue === 'number' && (
+                        colKey.toLowerCase().includes('price') || 
+                        colKey.toLowerCase().includes('preis') || 
+                        colKey.toLowerCase().includes('valoare') || 
+                        colKey.toLowerCase().includes('total') || 
+                        colKey.toLowerCase().includes('sum') || 
+                        colKey.toLowerCase().includes('betrag')
+                     )) {
                          return `${colValue.toFixed(2)} ${currency}`.trim();
                      }
                      return String(colValue).replace(/"/g, '""'); 
-                  }).join(' | '); 
+                  }).join(' | '); // Join values of the template columns with ' | '
                 } else {
-                  // Default product stringification if no applicable template for formatting
+                  // Default product stringification if no template or template has no columns (Standard extraction)
                   const pName = p.name || 'N/A';
-                  const pQty = typeof p.quantity === 'number' ? p.quantity : 'N/A';
-                  const pPrice = typeof p.price === 'number' ? `${p.price.toFixed(2)} ${currency}`.trim() : 'N/A';
+                  const pQty = (typeof p.quantity === 'number' || typeof p.quantity === 'string') && p.quantity !== null && p.quantity !== undefined ? p.quantity : 'N/A';
+                  const pPrice = typeof p.price === 'number' && p.price !== null && p.price !== undefined ? `${p.price.toFixed(2)} ${currency}`.trim() : 'N/A';
                   return `${String(pName).replace(/"/g, '""')} (Qty: ${pQty}, Price: ${pPrice})`;
                 }
-              }).join('; '); 
+              }).join('; '); // Join multiple products with '; '
             }
              if ((schemaField.type === 'number' || schemaField.key === 'totalPrice') && typeof value === 'number') {
                 return `${value.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
@@ -335,7 +332,7 @@ export default function Home() {
       title: "Export CSV finalizat",
       description: "Datele au fost exportate cu succes.",
     });
-  }, [extractedData, toast, selectedExportColumns, templates, selectedTemplateId]);
+  }, [extractedData, toast, selectedExportColumns, templates]);
 
   useEffect(() => {
     return () => {
@@ -354,7 +351,7 @@ export default function Home() {
       <main className="flex-grow container mx-auto px-4 py-8 space-y-8">
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-          <Card className="md:col-span-1 shadow-lg">
+          <Card className="md:col-span-1 shadow-lg rounded-xl">
             <CardHeader>
               <CardTitle className="text-lg flex items-center"><FileText className="mr-2 h-5 w-5 text-primary" />Încărcare & Șablon</CardTitle>
             </CardHeader>
@@ -366,10 +363,10 @@ export default function Home() {
                     value={selectedTemplateId || "none"} 
                     onValueChange={(value) => setSelectedTemplateId(value === 'none' ? null : value)}
                   >
-                  <SelectTrigger id="template-select">
+                  <SelectTrigger id="template-select" className="rounded-md">
                     <SelectValue placeholder="Extragere standard" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="rounded-md">
                     <SelectGroup>
                       <SelectLabel>Șabloane Disponibile</SelectLabel>
                       <SelectItem value="none">Extragere standard (Nume, Cant., Preț)</SelectItem>
@@ -382,11 +379,11 @@ export default function Home() {
                   </SelectContent>
                 </Select>
                  <p className="text-xs text-muted-foreground">
-                  Șablonul selectat aici va fi utilizat pentru procesarea noilor fișiere PDF și ca format implicit pentru coloana "Produse" la exportul CSV.
+                  Șablonul selectat aici va fi utilizat pentru procesarea noilor fișiere PDF. Formatul pentru coloana "Produse" la exportul CSV va reflecta șablonul folosit la procesarea fiecărui item.
                 </p>
               </div>
-              <Button variant="outline" className="w-full" onClick={() => setIsTemplateManagerOpen(true)}>
-                <Settings className="mr-2 h-4 w-4" /> Gestionează Șabloane
+              <Button variant="outline" className="w-full rounded-md" onClick={() => setIsTemplateManagerOpen(true)}>
+                <Settings className="mr-2 h-4 w-4" /> Gestionează Șabloane Linii Produse
               </Button>
             </CardContent>
           </Card>
@@ -413,10 +410,11 @@ export default function Home() {
         templates={templates}
         onTemplatesChange={handleTemplatesChange}
       />
-      <footer className="py-4 text-center text-sm text-muted-foreground border-t">
+      <footer className="py-4 text-center text-sm text-muted-foreground border-t mt-auto">
         PDF Data Harvester &copy; {new Date().getFullYear()}
       </footer>
     </div>
   );
 }
 
+    
