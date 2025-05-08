@@ -40,12 +40,11 @@ export default function Home() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
 
-  // Load data from localStorage on initial mount
   useEffect(() => {
     const storedData = localStorage.getItem('pdfHarvesterData');
     if (storedData) {
       try {
-        const parsedData = JSON.parse(storedData);
+        const parsedData = JSON.parse(storedData) as ExtractedDataItem[]; // Ensure type
         if(Array.isArray(parsedData)) {
             setExtractedData(parsedData);
         } else {
@@ -90,7 +89,6 @@ export default function Home() {
 
   }, []);
 
-  // Save data to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('pdfHarvesterData', JSON.stringify(extractedData));
   }, [extractedData]);
@@ -129,17 +127,18 @@ export default function Home() {
       fileName: file.name,
       status: 'uploading' as PdfStatus,
       extractedValues: {}, 
-      rawPdfUrl: URL.createObjectURL(file),
-      fileObject: file, 
+      rawPdfUrl: URL.createObjectURL(file), // Temporary URL for display
+      fileObject: file,
     }));
     
+    // Add items to display with their initial status and activeTemplateId
     const itemsToDisplay = newUploadItems.map(item => ({
         id: item.id,
         fileName: item.fileName,
         status: item.status,
         rawPdfUrl: item.rawPdfUrl,
         extractedValues: item.extractedValues,
-        activeTemplateName: currentUploadTemplate?.name || null
+        activeTemplateId: currentUploadTemplate?.id || null, // Store template ID
     }));
     setExtractedData(prev => [...itemsToDisplay, ...prev.filter(existingItem => !newUploadItems.find(newItem => newItem.id === existingItem.id))]);
 
@@ -165,7 +164,7 @@ export default function Home() {
             date: aiOutput.date,
             supplier: aiOutput.supplier,
             products: aiOutput.products || [],
-            totalPrice: aiOutput.totalPrice, // Schema expects number | null | undefined
+            totalPrice: aiOutput.totalPrice,
             currency: aiOutput.currency,
             documentLanguage: aiOutput.documentLanguage,
           };
@@ -173,10 +172,10 @@ export default function Home() {
           const processedItem: ExtractedDataItem = { 
             id: item.id,
             fileName: item.fileName,
-            rawPdfUrl: item.rawPdfUrl,
+            rawPdfUrl: item.rawPdfUrl, // Persist URL for processed items
             status: 'processed' as PdfStatus, 
             extractedValues,
-            activeTemplateName: currentUploadTemplate?.name || null,
+            activeTemplateId: currentUploadTemplate?.id || null, // Store template ID
           };
           setExtractedData(prev => prev.map(d => d.id === item.id ? processedItem : d));
           toast({
@@ -193,7 +192,7 @@ export default function Home() {
             status: 'needs_validation' as PdfStatus, 
             errorMessage: "AI-ul nu a putut extrage datele sau a returnat un răspuns gol.",
             extractedValues: {},
-            activeTemplateName: currentUploadTemplate?.name || null,
+            activeTemplateId: currentUploadTemplate?.id || null, // Store template ID
           };
           setExtractedData(prev => prev.map(d => d.id === item.id ? validationItem : d));
           toast({
@@ -211,7 +210,7 @@ export default function Home() {
             status: 'error' as PdfStatus, 
             errorMessage: error.message || "A apărut o eroare la procesarea AI.",
             extractedValues: {},
-            activeTemplateName: currentUploadTemplate?.name || null,
+            activeTemplateId: currentUploadTemplate?.id || null, // Store template ID
         };
         setExtractedData(prev => prev.map(d => d.id === item.id ? errorItem : d));
         toast({
@@ -268,22 +267,21 @@ export default function Home() {
             let value: any;
              if (schemaField.key === 'fileName') value = item.fileName;
              else if (schemaField.key === 'status') value = item.status;
-             else if (schemaField.key === 'activeTemplateName') value = item.activeTemplateName || 'Standard';
+             else if (schemaField.key === 'activeTemplateName') { // Derive template name for export
+                const template = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
+                value = template ? template.name : 'Standard';
+             }
              else value = item.extractedValues[schemaField.key as keyof typeof item.extractedValues];
 
             if (schemaField.key === 'products' && Array.isArray(value)) {
               const currency = item.extractedValues.currency || '';
-              
-              // ALWAYS use the template that was active when this specific item was processed.
-              const processingTemplate = item.activeTemplateName ? templates.find(t => t.name === item.activeTemplateName) : null;
+              const processingTemplate = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
               
               return value.map((p: Product) => { 
                 if (processingTemplate && processingTemplate.columns.length > 0) {
-                  // If a processing template with columns was used, export based on those columns
                   return processingTemplate.columns.map(colKey => {
-                     const colValue = p[colKey]; // AI should provide these keys
-                     if (colValue === undefined || colValue === null) return ''; // Handle missing/null values explicitly
-                     // Format numbers with currency if they are price-like columns based on name
+                     const colValue = p[colKey]; 
+                     if (colValue === undefined || colValue === null) return ''; 
                      if (typeof colValue === 'number' && (
                         colKey.toLowerCase().includes('price') || 
                         colKey.toLowerCase().includes('preis') || 
@@ -295,15 +293,14 @@ export default function Home() {
                          return `${colValue.toFixed(2)} ${currency}`.trim();
                      }
                      return String(colValue).replace(/"/g, '""'); 
-                  }).join(' | '); // Join values of the template columns with ' | '
+                  }).join(' | ');
                 } else {
-                  // Default product stringification if no template or template has no columns (Standard extraction)
                   const pName = p.name || 'N/A';
                   const pQty = (typeof p.quantity === 'number' || typeof p.quantity === 'string') && p.quantity !== null && p.quantity !== undefined ? p.quantity : 'N/A';
                   const pPrice = typeof p.price === 'number' && p.price !== null && p.price !== undefined ? `${p.price.toFixed(2)} ${currency}`.trim() : 'N/A';
                   return `${String(pName).replace(/"/g, '""')} (Qty: ${pQty}, Price: ${pPrice})`;
                 }
-              }).join('; '); // Join multiple products with '; '
+              }).join('; '); 
             }
              if ((schemaField.type === 'number' || schemaField.key === 'totalPrice') && typeof value === 'number') {
                 return `${value.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
@@ -398,7 +395,7 @@ export default function Home() {
               isLoading={isProcessingFiles && extractedData.some(d => d.status === 'uploading' || d.status === 'processing')}
               selectedExportColumns={selectedExportColumns}
               onSelectedExportColumnsChange={setSelectedExportColumns}
-              templates={templates}
+              templates={templates} // Pass templates for deriving names
             />
           </div>
         </div>
@@ -416,5 +413,3 @@ export default function Home() {
     </div>
   );
 }
-
-    

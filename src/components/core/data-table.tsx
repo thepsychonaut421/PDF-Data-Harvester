@@ -28,7 +28,7 @@ interface DataTableProps {
 
 const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteItem, templates }) => {
   const [editingCell, setEditingCell] = useState<{ itemId: string; fieldKey: string } | null>(null);
-  const [editValue, setEditValue] = useState<string | number | Product[] | null>(''); // Allow null for totalPrice
+  const [editValue, setEditValue] = useState<string | number | Product[] | null>('');
 
   const StatusBadge: FC<{ status: ExtractedDataItem['status'], message?: string }> = ({ status, message }) => {
     switch (status) {
@@ -54,7 +54,12 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
       setEditingCell({ itemId: item.id, fieldKey: field.key });
       let valueToEdit: any;
       if (field.key === 'fileName' || field.key === 'status' || field.key === 'actions' || field.key === 'activeTemplateName') {
-        valueToEdit = item[field.key as keyof typeof item];
+        if (field.key === 'activeTemplateName') { // For editing, show the ID or "Standard"
+            const template = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
+            valueToEdit = template ? template.name : 'Standard';
+        } else {
+            valueToEdit = item[field.key as keyof typeof item];
+        }
       } else {
         valueToEdit = item.extractedValues[field.key as keyof typeof item.extractedValues];
       }
@@ -62,7 +67,7 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
       if (field.type === 'products_list' && Array.isArray(valueToEdit)) {
         setEditValue(JSON.stringify(valueToEdit, null, 2));
       } else if (field.key === 'totalPrice') {
-        setEditValue(valueToEdit === null ? '' : String(valueToEdit)); // Handle null for totalPrice input
+        setEditValue(valueToEdit === null ? '' : String(valueToEdit));
       } else {
         setEditValue(valueToEdit !== undefined && valueToEdit !== null ? String(valueToEdit) : '');
       }
@@ -86,7 +91,7 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
         } else {
           finalValue = parseFloat(String(editValue));
           if (isNaN(finalValue)) {
-             finalValue = itemToUpdate.extractedValues.totalPrice; // Revert if invalid number
+             finalValue = itemToUpdate.extractedValues.totalPrice; 
           }
         }
       } else if (fieldSchema?.type === 'number') {
@@ -150,7 +155,7 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
       }
       return (
         <Input
-          id={`input-${field.key}-${item.id}`} // Unique ID for inputs
+          id={`input-${field.key}-${item.id}`}
           type={(field.key === 'totalPrice' || field.type === 'number') ? 'number' : field.type === 'date' ? 'date' : 'text'}
           value={String(editValue)}
           onChange={handleEditChange}
@@ -166,25 +171,28 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
     let value: any;
     if (field.key === 'fileName') value = item.fileName;
     else if (field.key === 'status') return <StatusBadge status={item.status} message={item.errorMessage} />;
-    else if (field.key === 'activeTemplateName') value = item.activeTemplateName || 'Standard';
+    else if (field.key === 'activeTemplateName') { // Derive template name for display
+        const template = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
+        value = template ? template.name : 'Standard';
+    }
     else value = item.extractedValues[field.key as keyof typeof item.extractedValues];
 
     const currency = item.extractedValues.currency || '';
 
     if (field.type === 'products_list' && Array.isArray(value)) {
-      const templateUsed = item.activeTemplateName ? templates.find(t => t.name === item.activeTemplateName) : null;
+      const templateUsed = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
       return (
         <ul className="list-disc list-inside text-xs space-y-1 max-w-md">
           {value.map((p: Product, i: number) => (
-            <li key={i} className="truncate" title={ // Add title for full view on hover
+            <li key={i} className="truncate" title={ 
               templateUsed && templateUsed.columns.length > 0 ? (
                 templateUsed.columns.map(colKey => `${colKey}: ${p[colKey] !== undefined && p[colKey] !== null ? String(p[colKey]) : 'N/A'}`).join(' | ')
               ) : (
-                `${p.name || 'N/A'} (Qty: ${p.quantity !== undefined ? p.quantity : 'N/A'}, Price: ${p.price !== undefined && p.price !== null ? (p.price || 0).toFixed(2) + ' ' + currency : 'N/A'})`
+                `${p.name || 'N/A'} (Qty: ${p.quantity !== undefined ? p.quantity : 'N/A'}, Price: ${p.price !== undefined && p.price !== null ? (typeof p.price === 'number' ? p.price.toFixed(2) : p.price) + ' ' + currency : 'N/A'})`
               )
             }>
               {templateUsed && templateUsed.columns.length > 0 ? (
-                templateUsed.columns.map(colKey => `${p[colKey] !== undefined && p[colKey] !== null ? String(p[colKey]) : 'N/A'}`).slice(0,2).join(' | ') + (templateUsed.columns.length > 2 ? '...' : '') // Show first few columns
+                templateUsed.columns.map(colKey => `${p[colKey] !== undefined && p[colKey] !== null ? String(p[colKey]) : 'N/A'}`).slice(0,2).join(' | ') + (templateUsed.columns.length > 2 ? '...' : '') 
               ) : (
                 `${p.name || 'N/A'} (Qty: ${p.quantity !== undefined ? p.quantity : 'N/A'}, ...)`
               )}
@@ -253,7 +261,7 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
                     key={field.key}
                     onClick={() => handleCellClick(item, field)}
                     className={`py-2 px-3 align-top
-                                ${field.editable ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700' : ''}
+                                ${field.editable && field.key !== 'activeTemplateName' ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700' : ''}
                                 ${editingCell?.itemId === item.id && editingCell?.fieldKey === field.key ? 'p-0' : ''}
                                 ${field.type === 'actions' ? 'text-right align-middle sticky right-0 bg-card z-10' : ''}
                                 ${field.type !== 'products_list' ? 'whitespace-nowrap' : ''}

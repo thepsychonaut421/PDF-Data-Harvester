@@ -27,7 +27,7 @@ interface DataDashboardProps {
   isLoading?: boolean;
   selectedExportColumns: string[];
   onSelectedExportColumnsChange: (keys: string[]) => void;
-  templates: InvoiceTemplate[]; // Pass templates for DataTable
+  templates: InvoiceTemplate[]; 
 }
 
 const DataDashboard: FC<DataDashboardProps> = ({ 
@@ -46,10 +46,13 @@ const DataDashboard: FC<DataDashboardProps> = ({
 
   const filteredData = useMemo(() => {
     return data.filter(item => {
+      const templateUsed = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
+      const templateNameToSearch = templateUsed ? templateUsed.name : 'Standard';
+
       const searchString = [
         item.fileName,
         item.status,
-        item.activeTemplateName,
+        templateNameToSearch, // Use derived template name
         item.extractedValues.date,
         item.extractedValues.supplier,
         item.extractedValues.totalPrice,
@@ -64,7 +67,7 @@ const DataDashboard: FC<DataDashboardProps> = ({
       const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
       return matchesSearchTerm && matchesStatus;
     });
-  }, [data, searchTerm, statusFilter]);
+  }, [data, searchTerm, statusFilter, templates]); // Add templates to dependency array
   
   const processedCount = useMemo(() => data.filter(item => item.status === 'processed').length, [data]);
   const validationCount = useMemo(() => data.filter(item => item.status === 'needs_validation').length, [data]);
