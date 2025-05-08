@@ -285,7 +285,8 @@ export default function Home() {
                   return templateUsed.columns.map(colKey => {
                      const colValue = p[colKey];
                      if (colValue === undefined || colValue === null) return '';
-                     if (typeof colValue === 'number' && (colKey.toLowerCase().includes('price') || colKey.toLowerCase().includes('preis') || colKey.toLowerCase().includes('valoare'))) {
+                     // Attempt to format as number with currency only if the column key suggests it's a monetary value
+                     if (typeof colValue === 'number' && (colKey.toLowerCase().includes('price') || colKey.toLowerCase().includes('preis') || colKey.toLowerCase().includes('valoare') || colKey.toLowerCase().includes('total') || colKey.toLowerCase().includes('sum') || colKey.toLowerCase().includes('betrag'))) {
                          return `${colValue.toFixed(2)} ${currency}`.trim();
                      }
                      return String(colValue).replace(/"/g, '""'); // Escape double quotes in cell value

@@ -178,13 +178,13 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
           {value.map((p: Product, i: number) => (
             <li key={i} className="truncate" title={ // Add title for full view on hover
               templateUsed && templateUsed.columns.length > 0 ? (
-                templateUsed.columns.map(colKey => `${colKey}: ${p[colKey] !== undefined && p[colKey] !== null ? p[colKey] : 'N/A'}`).join(' | ')
+                templateUsed.columns.map(colKey => `${colKey}: ${p[colKey] !== undefined && p[colKey] !== null ? String(p[colKey]) : 'N/A'}`).join(' | ')
               ) : (
                 `${p.name || 'N/A'} (Qty: ${p.quantity !== undefined ? p.quantity : 'N/A'}, Price: ${p.price !== undefined && p.price !== null ? (p.price || 0).toFixed(2) + ' ' + currency : 'N/A'})`
               )
             }>
               {templateUsed && templateUsed.columns.length > 0 ? (
-                templateUsed.columns.map(colKey => `${p[colKey] !== undefined && p[colKey] !== null ? p[colKey] : 'N/A'}`).slice(0,2).join(' | ') + (templateUsed.columns.length > 2 ? '...' : '') // Show first few columns
+                templateUsed.columns.map(colKey => `${p[colKey] !== undefined && p[colKey] !== null ? String(p[colKey]) : 'N/A'}`).slice(0,2).join(' | ') + (templateUsed.columns.length > 2 ? '...' : '') // Show first few columns
               ) : (
                 `${p.name || 'N/A'} (Qty: ${p.quantity !== undefined ? p.quantity : 'N/A'}, ...)`
               )}
