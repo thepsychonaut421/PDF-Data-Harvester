@@ -1,3 +1,4 @@
+
 'use client';
 import type { FC} from 'react';
 import { useState, useMemo } from 'react';
@@ -6,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import DataTable from './data-table';
-import type { ExtractedDataItem, AppSchema, PdfStatus } from '@/lib/types';
+import type { ExtractedDataItem, AppSchema, PdfStatus, InvoiceTemplate } from '@/lib/types';
 import { Download, Filter, Search, AlertTriangle, CheckCircle2, XCircle, Loader2, ListFilter } from 'lucide-react';
 import {
   DropdownMenu,
@@ -26,6 +27,7 @@ interface DataDashboardProps {
   isLoading?: boolean;
   selectedExportColumns: string[];
   onSelectedExportColumnsChange: (keys: string[]) => void;
+  templates: InvoiceTemplate[]; // Pass templates for DataTable
 }
 
 const DataDashboard: FC<DataDashboardProps> = ({ 
@@ -36,7 +38,8 @@ const DataDashboard: FC<DataDashboardProps> = ({
   onExportCsv, 
   isLoading,
   selectedExportColumns,
-  onSelectedExportColumnsChange 
+  onSelectedExportColumnsChange,
+  templates,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<PdfStatus | 'all'>('all');
@@ -46,12 +49,15 @@ const DataDashboard: FC<DataDashboardProps> = ({
       const searchString = [
         item.fileName,
         item.status,
+        item.activeTemplateName,
         item.extractedValues.date,
         item.extractedValues.supplier,
         item.extractedValues.totalPrice,
         item.extractedValues.currency,
         item.extractedValues.documentLanguage,
-        ...(item.extractedValues.products?.map(p => `${p.name} ${p.quantity} ${p.price}`) || [])
+        ...(item.extractedValues.products?.map(p => {
+            return Object.values(p).join(' ');
+        }) || [])
       ].join(' ').toLowerCase();
       
       const matchesSearchTerm = searchString.includes(searchTerm.toLowerCase());
@@ -71,22 +77,22 @@ const DataDashboard: FC<DataDashboardProps> = ({
       <CardHeader>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <CardTitle className="text-xl text-primary">Dashboard Date Extrase</CardTitle>
-            <CardDescription>Vizualizați, editați și exportați datele extrase din fișierele PDF.</CardDescription>
+            <CardTitle className="text-xl text-primary">Rezultate Extragere</CardTitle>
+            <CardDescription>Vizualizați, editați și exportați datele extrase.</CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline">
                   <ListFilter className="mr-2 h-4 w-4" />
-                  Selectează Coloane
+                  Coloane Export
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-[250px]">
-                <DropdownMenuLabel>Coloane pentru Export</DropdownMenuLabel>
+                <DropdownMenuLabel>Selectează Coloane pentru Export</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {schema.fields
-                  .filter(field => field.key !== 'actions') // 'actions' column is not exportable
+                  .filter(field => field.key !== 'actions') 
                   .map(field => (
                     <DropdownMenuCheckboxItem
                       key={field.key}
@@ -115,44 +121,44 @@ const DataDashboard: FC<DataDashboardProps> = ({
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <Card className="bg-success/10 dark:bg-success/20 border-success/30 dark:border-success/50">
+            <Card className="bg-success/10 border-success/50">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-success-foreground/80 dark:text-success-foreground/70">Procesate</CardTitle>
+                    <CardTitle className="text-sm font-medium text-success-foreground">Procesate</CardTitle>
                     <CheckCircle2 className="h-5 w-5 text-success" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold text-success-foreground dark:text-success-foreground/90">{processedCount}</div>
-                    <p className="text-xs text-success-foreground/70 dark:text-success-foreground/60">documente</p>
+                    <div className="text-2xl font-bold text-success-foreground">{processedCount}</div>
+                    <p className="text-xs text-muted-foreground">fișiere</p>
                 </CardContent>
             </Card>
-             <Card className="bg-primary/10 dark:bg-primary/20 border-primary/30 dark:border-primary/50">
+             <Card className="bg-primary/10 border-primary/50">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-primary-foreground/80 dark:text-primary-foreground/70">În Procesare</CardTitle>
+                    <CardTitle className="text-sm font-medium text-primary-foreground">În Procesare</CardTitle>
                     <Loader2 className="h-5 w-5 text-primary animate-spin" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold text-primary-foreground dark:text-primary-foreground/90">{processingCount}</div>
-                     <p className="text-xs text-primary-foreground/70 dark:text-primary-foreground/60">documente</p>
+                    <div className="text-2xl font-bold text-primary-foreground">{processingCount}</div>
+                     <p className="text-xs text-muted-foreground">fișiere</p>
                 </CardContent>
             </Card>
-            <Card className="bg-warning/10 dark:bg-warning/20 border-warning/30 dark:border-warning/50">
+            <Card className="bg-warning/10 border-warning/50">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-warning-foreground/80 dark:text-warning-foreground/70">Necesită Validare</CardTitle>
+                    <CardTitle className="text-sm font-medium text-warning-foreground">Necesită Validare</CardTitle>
                     <AlertTriangle className="h-5 w-5 text-warning" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold text-warning-foreground dark:text-warning-foreground/90">{validationCount}</div>
-                    <p className="text-xs text-warning-foreground/70 dark:text-warning-foreground/60">documente</p>
+                    <div className="text-2xl font-bold text-warning-foreground">{validationCount}</div>
+                    <p className="text-xs text-muted-foreground">fișiere</p>
                 </CardContent>
             </Card>
-            <Card className="bg-destructive/10 dark:bg-destructive/20 border-destructive/30 dark:border-destructive/50">
+            <Card className="bg-destructive/10 border-destructive/50">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-destructive-foreground/80 dark:text-destructive-foreground/70">Erori</CardTitle>
+                    <CardTitle className="text-sm font-medium text-destructive-foreground">Erori</CardTitle>
                     <XCircle className="h-5 w-5 text-destructive" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold text-destructive-foreground dark:text-destructive-foreground/90">{errorCount}</div>
-                     <p className="text-xs text-destructive-foreground/70 dark:text-destructive-foreground/60">documente</p>
+                    <div className="text-2xl font-bold text-destructive-foreground">{errorCount}</div>
+                     <p className="text-xs text-muted-foreground">fișiere</p>
                 </CardContent>
             </Card>
         </div>
@@ -199,6 +205,7 @@ const DataDashboard: FC<DataDashboardProps> = ({
             schema={schema.fields} 
             onUpdateItem={onUpdateItem}
             onDeleteItem={onDeleteItem}
+            templates={templates} 
            />
         )}
       </CardContent>

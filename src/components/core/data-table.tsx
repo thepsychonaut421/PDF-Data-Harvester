@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { FC, ChangeEvent } from 'react';
@@ -14,26 +15,27 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import type { ExtractedDataItem, SchemaField, Product } from '@/lib/types';
+import type { ExtractedDataItem, SchemaField, Product, InvoiceTemplate } from '@/lib/types';
 import { CheckCircle2, AlertTriangle, XCircle, Save, XIcon as CancelIcon, Trash2, Info, Loader2 } from 'lucide-react';
 
 interface DataTableProps {
   data: ExtractedDataItem[];
   schema: SchemaField[];
   onUpdateItem: (item: ExtractedDataItem) => void;
-  onDeleteItem?: (itemId: string) => void; // Optional delete functionality
+  onDeleteItem?: (itemId: string) => void;
+  templates: InvoiceTemplate[]; 
 }
 
-const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteItem }) => {
+const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteItem, templates }) => {
   const [editingCell, setEditingCell] = useState<{ itemId: string; fieldKey: string } | null>(null);
-  const [editValue, setEditValue] = useState<string | number | Product[]>('');
+  const [editValue, setEditValue] = useState<string | number | Product[] | null>(''); // Allow null for totalPrice
 
   const StatusBadge: FC<{ status: ExtractedDataItem['status'], message?: string }> = ({ status, message }) => {
     switch (status) {
       case 'processed':
         return <Badge variant="default" className="bg-success hover:bg-success text-success-foreground"><CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Procesat</Badge>;
       case 'needs_validation':
-        return <Badge variant="warning"><AlertTriangle className="mr-1 h-3.5 w-3.5" /> Validare Necesara</Badge>;
+        return <Badge variant="warning"><AlertTriangle className="mr-1 h-3.5 w-3.5" /> Validare</Badge>;
       case 'error':
         return <Badge variant="destructive"><XCircle className="mr-1 h-3.5 w-3.5" /> Eroare{message ? `: ${message}`: ''}</Badge>;
       case 'pending':
@@ -50,16 +52,19 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
   const handleCellClick = (item: ExtractedDataItem, field: SchemaField) => {
     if (field.editable) {
       setEditingCell({ itemId: item.id, fieldKey: field.key });
-      const value = item.extractedValues[field.key as keyof typeof item.extractedValues];
-      if (field.type === 'products_list' && Array.isArray(value)) {
-         // Ensure price is a number or undefined, default to 0 if it's missing for editing
-        const productsWithSanitizedPrice = value.map(p => ({...p, price: typeof p.price === 'number' ? p.price : 0}));
-        setEditValue(JSON.stringify(productsWithSanitizedPrice, null, 2));
-      } else if (field.key === 'totalPrice' && typeof value === 'number') {
-        setEditValue(value); 
+      let valueToEdit: any;
+      if (field.key === 'fileName' || field.key === 'status' || field.key === 'actions' || field.key === 'activeTemplateName') {
+        valueToEdit = item[field.key as keyof typeof item];
+      } else {
+        valueToEdit = item.extractedValues[field.key as keyof typeof item.extractedValues];
       }
-      else {
-        setEditValue(value !== undefined && value !== null ? String(value) : '');
+
+      if (field.type === 'products_list' && Array.isArray(valueToEdit)) {
+        setEditValue(JSON.stringify(valueToEdit, null, 2));
+      } else if (field.key === 'totalPrice') {
+        setEditValue(valueToEdit === null ? '' : String(valueToEdit)); // Handle null for totalPrice input
+      } else {
+        setEditValue(valueToEdit !== undefined && valueToEdit !== null ? String(valueToEdit) : '');
       }
     }
   };
@@ -75,38 +80,48 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
       let finalValue: any = editValue;
       const fieldSchema = schema.find(f => f.key === editingCell.fieldKey);
 
-      if ((fieldSchema?.type === 'number' || editingCell.fieldKey === 'totalPrice') ) {
+      if (editingCell.fieldKey === 'totalPrice') {
+        if (String(editValue).trim() === '') {
+          finalValue = null;
+        } else {
+          finalValue = parseFloat(String(editValue));
+          if (isNaN(finalValue)) {
+             finalValue = itemToUpdate.extractedValues.totalPrice; // Revert if invalid number
+          }
+        }
+      } else if (fieldSchema?.type === 'number') {
         finalValue = parseFloat(String(editValue));
-        if (isNaN(finalValue)) finalValue = itemToUpdate.extractedValues[editingCell.fieldKey as keyof typeof itemToUpdate.extractedValues];
+        if (isNaN(finalValue)) {
+            finalValue = itemToUpdate.extractedValues[editingCell.fieldKey as keyof typeof itemToUpdate.extractedValues];
+        }
       } else if (fieldSchema?.type === 'products_list') {
         try {
           finalValue = JSON.parse(String(editValue));
-          if (!Array.isArray(finalValue) || !finalValue.every(p => typeof p.name === 'string' && typeof p.quantity === 'number' && (typeof p.price === 'number' || p.price === undefined))) {
-            throw new Error("Produsele trebuie să fie un array de {name: string, quantity: number, price?: number}.");
+          if (!Array.isArray(finalValue)) { 
+            throw new Error("Produsele trebuie să fie un array.");
           }
-          // Ensure price is a number, default to 0 if missing after parsing
-          finalValue = finalValue.map((p: any) => ({...p, price: typeof p.price === 'number' ? p.price : 0 }))
-
         } catch (error) {
           console.error("JSON invalid pentru produse:", error);
           finalValue = itemToUpdate.extractedValues[editingCell.fieldKey as keyof typeof itemToUpdate.extractedValues]; 
         }
       }
       
+      const updatedExtractedValues = {
+        ...itemToUpdate.extractedValues,
+        [editingCell.fieldKey]: finalValue,
+      };
+
       onUpdateItem({
         ...itemToUpdate,
-        extractedValues: {
-          ...itemToUpdate.extractedValues,
-          [editingCell.fieldKey]: finalValue,
-        },
-        status: 'processed' // Mark as processed after edit
+        extractedValues: updatedExtractedValues,
+        status: (itemToUpdate.status === 'needs_validation' || itemToUpdate.status === 'error') && fieldSchema?.editable ? 'processed' : itemToUpdate.status,
       });
     }
     setEditingCell(null);
   };
   
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !(e.target instanceof HTMLTextAreaElement)) { 
+    if (e.key === 'Enter' && !e.shiftKey && !(e.target instanceof HTMLTextAreaElement || e.currentTarget.id === `input-totalPrice-${editingCell?.itemId}`)) { 
       saveEdit();
     } else if (e.key === 'Escape') {
       setEditingCell(null);
@@ -121,13 +136,12 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
     const isCurrentlyEditing = editingCell?.itemId === item.id && editingCell?.fieldKey === field.key;
 
     if (isCurrentlyEditing) {
-      const fieldSchema = schema.find(f => f.key === field.key);
-      if (fieldSchema?.type === 'products_list') {
+      if (field.type === 'products_list') {
         return (
-           <Textarea // Use ShadCN Textarea
+           <Textarea
             value={String(editValue)}
             onChange={handleEditChange}
-            onBlur={saveEdit} // Save on blur for textarea too for consistency
+            onBlur={saveEdit} 
             onKeyDown={handleKeyDown}
             autoFocus
             className="w-full p-1 border rounded-md text-sm min-h-[100px] bg-background resize-y"
@@ -136,12 +150,14 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
       }
       return (
         <Input
-          type={(field.type === 'number' || field.key === 'totalPrice') ? 'number' : field.type === 'date' ? 'date' : 'text'}
+          id={`input-${field.key}-${item.id}`} // Unique ID for inputs
+          type={(field.key === 'totalPrice' || field.type === 'number') ? 'number' : field.type === 'date' ? 'date' : 'text'}
           value={String(editValue)}
           onChange={handleEditChange}
           onBlur={saveEdit} 
           onKeyDown={handleKeyDown}
           autoFocus
+          step={(field.key === 'totalPrice' || field.type === 'number') ? "0.01" : undefined}
           className="w-full p-1 h-8 text-sm bg-background"
         />
       );
@@ -150,29 +166,44 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
     let value: any;
     if (field.key === 'fileName') value = item.fileName;
     else if (field.key === 'status') return <StatusBadge status={item.status} message={item.errorMessage} />;
+    else if (field.key === 'activeTemplateName') value = item.activeTemplateName || 'Standard';
     else value = item.extractedValues[field.key as keyof typeof item.extractedValues];
 
     const currency = item.extractedValues.currency || '';
 
     if (field.type === 'products_list' && Array.isArray(value)) {
+      const templateUsed = item.activeTemplateName ? templates.find(t => t.name === item.activeTemplateName) : null;
       return (
-        <ul className="list-disc list-inside text-xs space-y-1">
+        <ul className="list-disc list-inside text-xs space-y-1 max-w-md">
           {value.map((p: Product, i: number) => (
-            <li key={i}>
-              {p.name} ({p.quantity} x {(p.price ?? 0).toFixed(2)} {currency})
+            <li key={i} className="truncate" title={ // Add title for full view on hover
+              templateUsed && templateUsed.columns.length > 0 ? (
+                templateUsed.columns.map(colKey => `${colKey}: ${p[colKey] !== undefined && p[colKey] !== null ? p[colKey] : 'N/A'}`).join(' | ')
+              ) : (
+                `${p.name || 'N/A'} (Qty: ${p.quantity !== undefined ? p.quantity : 'N/A'}, Price: ${p.price !== undefined && p.price !== null ? (p.price || 0).toFixed(2) + ' ' + currency : 'N/A'})`
+              )
+            }>
+              {templateUsed && templateUsed.columns.length > 0 ? (
+                templateUsed.columns.map(colKey => `${p[colKey] !== undefined && p[colKey] !== null ? p[colKey] : 'N/A'}`).slice(0,2).join(' | ') + (templateUsed.columns.length > 2 ? '...' : '') // Show first few columns
+              ) : (
+                `${p.name || 'N/A'} (Qty: ${p.quantity !== undefined ? p.quantity : 'N/A'}, ...)`
+              )}
             </li>
           ))}
         </ul>
       );
     }
+    if (field.key === 'totalPrice' && (value === null || value === undefined)) {
+        return 'N/A';
+    }
     if ((field.type === 'number' || field.key === 'totalPrice') && typeof value === 'number') {
       return `${value.toFixed(2)} ${currency}`;
     }
     
-    if (field.key === 'currency' || field.key === 'documentLanguage') {
-        return value || 'N/A';
+    if ((field.key === 'currency' || field.key === 'documentLanguage') && (value === null || value === undefined)) {
+        return 'N/A';
     }
-
+    
     return value !== undefined && value !== null ? String(value) : 'N/A';
   };
   
@@ -186,12 +217,22 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
 
 
   return (
-    <div className="rounded-md border overflow-hidden">
-      <Table>
+    <div className="rounded-md border overflow-x-auto">
+      <Table className="min-w-full"> 
         <TableHeader>
           <TableRow>
             {dynamicSchema.map(field => (
-              <TableHead key={field.key} className={`${field.type === 'actions' ? 'text-right w-[120px]' : ''} ${field.type === 'products_list' ? 'w-[35%]' : ''} ${field.key === 'fileName' ? 'w-[25%]' : ''} ${field.key === 'status' ? 'w-[150px]' : ''}`}>
+              <TableHead 
+                key={field.key} 
+                className={`
+                  ${field.type === 'actions' ? 'text-right w-[120px] sticky right-0 bg-card z-10' : ''} 
+                  ${field.type === 'products_list' ? 'w-[30%] min-w-[250px]' : ''} 
+                  ${field.key === 'fileName' ? 'w-[20%] min-w-[180px]' : ''} 
+                  ${field.key === 'status' ? 'w-[150px]' : ''}
+                  ${field.key === 'activeTemplateName' ? 'w-[150px]' : ''}
+                  whitespace-nowrap px-3 py-2
+                `}
+              >
                 {field.label}
               </TableHead>
             ))}
@@ -214,7 +255,8 @@ const DataTable: FC<DataTableProps> = ({ data, schema, onUpdateItem, onDeleteIte
                     className={`py-2 px-3 align-top
                                 ${field.editable ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700' : ''}
                                 ${editingCell?.itemId === item.id && editingCell?.fieldKey === field.key ? 'p-0' : ''}
-                                ${field.type === 'actions' ? 'text-right align-middle' : ''}
+                                ${field.type === 'actions' ? 'text-right align-middle sticky right-0 bg-card z-10' : ''}
+                                ${field.type !== 'products_list' ? 'whitespace-nowrap' : ''}
                                 `}
                   >
                     {field.type === 'actions' && onDeleteItem ? (
