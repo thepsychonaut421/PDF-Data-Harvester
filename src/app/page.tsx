@@ -267,38 +267,46 @@ export default function Home() {
     
     const exportableSchemaFields = MOCK_SCHEMA.fields.filter(field => selectedExportColumns.includes(field.key as string));
     const headers = exportableSchemaFields.map(field => field.label);
+
+    // Get the currently selected template in the UI for formatting product lines
+    const currentGlobalUploadTemplate = selectedTemplateId ? templates.find(t => t.id === selectedTemplateId) : null;
     
     const rows = relevantData.map(item => {
         return exportableSchemaFields.map(schemaField => {
             let value: any;
              if (schemaField.key === 'fileName') value = item.fileName;
              else if (schemaField.key === 'status') value = item.status;
-             else if (schemaField.key === 'activeTemplateName') value = item.activeTemplateName || 'Standard';
+             else if (schemaField.key === 'activeTemplateName') value = item.activeTemplateName || 'Standard'; // This still reflects how item was processed
              else value = item.extractedValues[schemaField.key as keyof typeof item.extractedValues];
 
-            if (schemaField.key === 'products' && Array.isArray(value)) { // Check schemaField.key for products
+            if (schemaField.key === 'products' && Array.isArray(value)) {
               const currency = item.extractedValues.currency || '';
-              const templateUsed = item.activeTemplateName ? templates.find(t => t.name === item.activeTemplateName) : null;
               
-              return value.map((p: Product) => { // Ensure p is typed as Product
-                if (templateUsed && templateUsed.columns.length > 0) {
-                  return templateUsed.columns.map(colKey => {
+              // Determine which template to use for formatting this item's products
+              // Prioritize the globally selected template for export, otherwise use the item's original processing template
+              let templateForProductFormat = currentGlobalUploadTemplate;
+              if (!templateForProductFormat) {
+                  templateForProductFormat = item.activeTemplateName ? templates.find(t => t.name === item.activeTemplateName) : null;
+              }
+              
+              return value.map((p: Product) => { 
+                if (templateForProductFormat && templateForProductFormat.columns.length > 0) {
+                  return templateForProductFormat.columns.map(colKey => {
                      const colValue = p[colKey];
                      if (colValue === undefined || colValue === null) return '';
-                     // Attempt to format as number with currency only if the column key suggests it's a monetary value
                      if (typeof colValue === 'number' && (colKey.toLowerCase().includes('price') || colKey.toLowerCase().includes('preis') || colKey.toLowerCase().includes('valoare') || colKey.toLowerCase().includes('total') || colKey.toLowerCase().includes('sum') || colKey.toLowerCase().includes('betrag'))) {
                          return `${colValue.toFixed(2)} ${currency}`.trim();
                      }
-                     return String(colValue).replace(/"/g, '""'); // Escape double quotes in cell value
+                     return String(colValue).replace(/"/g, '""'); 
                   }).join(' | '); 
                 } else {
-                  // Default product stringification if no template or template has no columns
+                  // Default product stringification if no applicable template for formatting
                   const pName = p.name || 'N/A';
                   const pQty = typeof p.quantity === 'number' ? p.quantity : 'N/A';
                   const pPrice = typeof p.price === 'number' ? `${p.price.toFixed(2)} ${currency}`.trim() : 'N/A';
                   return `${String(pName).replace(/"/g, '""')} (Qty: ${pQty}, Price: ${pPrice})`;
                 }
-              }).join('; '); // Semicolon to separate multiple products
+              }).join('; '); 
             }
              if ((schemaField.type === 'number' || schemaField.key === 'totalPrice') && typeof value === 'number') {
                 return `${value.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
@@ -327,7 +335,7 @@ export default function Home() {
       title: "Export CSV finalizat",
       description: "Datele au fost exportate cu succes.",
     });
-  }, [extractedData, toast, selectedExportColumns, templates]);
+  }, [extractedData, toast, selectedExportColumns, templates, selectedTemplateId]);
 
   useEffect(() => {
     return () => {
@@ -355,7 +363,7 @@ export default function Home() {
               <div className="space-y-2 pt-4">
                 <Label htmlFor="template-select" className="text-sm font-medium text-foreground">Selectează Șablon Extragere Linii Produse</Label>
                  <Select
-                    value={selectedTemplateId || "none"} // Ensure "none" is default if null
+                    value={selectedTemplateId || "none"} 
                     onValueChange={(value) => setSelectedTemplateId(value === 'none' ? null : value)}
                   >
                   <SelectTrigger id="template-select">
@@ -374,7 +382,7 @@ export default function Home() {
                   </SelectContent>
                 </Select>
                  <p className="text-xs text-muted-foreground">
-                  Șablonul definește coloanele specifice pentru extragerea detaliilor din liniile de produse.
+                  Șablonul selectat aici va fi utilizat pentru procesarea noilor fișiere PDF și ca format implicit pentru coloana "Produse" la exportul CSV.
                 </p>
               </div>
               <Button variant="outline" className="w-full" onClick={() => setIsTemplateManagerOpen(true)}>
@@ -411,3 +419,4 @@ export default function Home() {
     </div>
   );
 }
+
