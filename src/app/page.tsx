@@ -11,6 +11,7 @@ import { defaultAppSchema } from '@/lib/types';
 import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { extractInvoiceData, type ExtractInvoiceInput, type ExtractInvoiceOutput } from '@/ai/flows/extract-invoice-data-flow';
+import { runOcrFallbackExtraction } from '@/ai/ocr-fallback';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -81,11 +82,52 @@ export default function Home() {
         const parsedTemplates = JSON.parse(storedTemplates) as InvoiceTemplate[];
         if (Array.isArray(parsedTemplates)) {
           setTemplates(parsedTemplates);
+          // Ensure ERPNext Article Default template exists
+          const erpNextTemplateExists = parsedTemplates.some(t => t.id === 'erpnext-article-default');
+          if (!erpNextTemplateExists) {
+            const erpNextTemplate: InvoiceTemplate = {
+              id: 'erpnext-article-default',
+              name: 'ERPNext Article Default',
+              columns: ['Artikelnummer', 'Artikelbezeichnung', 'Menge', 'Einzelpreis', 'Gesamtpreis'],
+              isDefault: true,
+            };
+            const updatedTemplates = [...parsedTemplates, erpNextTemplate];
+            setTemplates(updatedTemplates);
+            localStorage.setItem('pdfHarvesterTemplates', JSON.stringify(updatedTemplates));
+          }
+        } else {
+           // Initialize with ERPNext default if no templates exist
+           const erpNextTemplate: InvoiceTemplate = {
+            id: 'erpnext-article-default',
+            name: 'ERPNext Article Default',
+            columns: ['Artikelnummer', 'Artikelbezeichnung', 'Menge', 'Einzelpreis', 'Gesamtpreis'],
+            isDefault: true,
+          };
+          setTemplates([erpNextTemplate]);
+          localStorage.setItem('pdfHarvesterTemplates', JSON.stringify([erpNextTemplate]));
         }
       } catch (error) {
         console.error("Failed to parse stored templates:", error);
+         const erpNextTemplate: InvoiceTemplate = {
+            id: 'erpnext-article-default',
+            name: 'ERPNext Article Default',
+            columns: ['Artikelnummer', 'Artikelbezeichnung', 'Menge', 'Einzelpreis', 'Gesamtpreis'],
+            isDefault: true,
+          };
+          setTemplates([erpNextTemplate]);
+          localStorage.setItem('pdfHarvesterTemplates', JSON.stringify([erpNextTemplate]));
       }
+    } else {
+        const erpNextTemplate: InvoiceTemplate = {
+            id: 'erpnext-article-default',
+            name: 'ERPNext Article Default',
+            columns: ['Artikelnummer', 'Artikelbezeichnung', 'Menge', 'Einzelpreis', 'Gesamtpreis'],
+            isDefault: true,
+        };
+        setTemplates([erpNextTemplate]);
+        localStorage.setItem('pdfHarvesterTemplates', JSON.stringify([erpNextTemplate]));
     }
+
 
     const storedUploadTemplateId = localStorage.getItem('pdfHarvesterUploadTemplateId');
     if (storedUploadTemplateId && storedUploadTemplateId !== "null") { 
@@ -102,9 +144,15 @@ export default function Home() {
     const storedProductLineExportTemplateId = localStorage.getItem('pdfHarvesterProductLineExportTemplateId');
     if (storedProductLineExportTemplateId && storedProductLineExportTemplateId !== "null") {
         setProductLineExportTemplateId(storedProductLineExportTemplateId);
+    } else {
+        // Default to ERPNext template if available and nothing is set
+        const erpNextTemplate = templates.find(t => t.id === 'erpnext-article-default');
+        if (erpNextTemplate) {
+            setProductLineExportTemplateId(erpNextTemplate.id);
+        }
     }
 
-  }, []);
+  }, []); // Run only on mount
 
   useEffect(() => {
     localStorage.setItem('pdfHarvesterData', JSON.stringify(extractedData));
@@ -187,18 +235,51 @@ export default function Home() {
         const pdfDataUri = await fileToDataUri(item.fileObject);
         const aiInput: ExtractInvoiceInput = { 
           pdfDataUri,
+          // Pass all column names from the selected upload template to the AI
+          // The AI will attempt to find values for its standard fields (item_code, name, quantity, price)
+          // AND any additional fields mentioned in lineItemColumns.
           lineItemColumns: currentUploadTemplate?.columns 
         };
-        const aiOutput: ExtractInvoiceOutput | null = await extractInvoiceData(aiInput);
+        let aiOutput: ExtractInvoiceOutput | null = await extractInvoiceData(aiInput);
+        let productsExtractedBy = 'ai';
+
+        const aiProducts = aiOutput?.products || [];
+        const productsAreUnsatisfactory = aiProducts.length === 0 || 
+                                         aiProducts.every(p => !p.name && !p.quantity && !p.item_code);
+
+        if (aiOutput && productsAreUnsatisfactory) {
+          toast({
+            title: "Extragere AI produse eșuată/incompletă",
+            description: `Se încearcă fallback OCR SIMULAT pentru ${item.fileName}.`,
+            variant: "info", // Changed to info from default for better UX
+          });
+          const fallbackProducts = await runOcrFallbackExtraction(pdfDataUri);
+          if (fallbackProducts && fallbackProducts.length > 0) {
+            if (aiOutput) { 
+                aiOutput.products = fallbackProducts;
+                productsExtractedBy = 'ocr_fallback (simulated)';
+            } else {
+                aiOutput = { products: fallbackProducts };
+                productsExtractedBy = 'ocr_fallback (simulated) - AI output was null';
+            }
+          }
+        }
 
         if (aiOutput) {
+          const rawProducts = aiOutput.products || [];
+          // Products are already structured by the AI according to its internal schema (item_code, name, quantity, price)
+          // and potentially any additional columns if they were requested via lineItemColumns and the AI could find them.
+          // No further mapping is strictly needed here unless the upload template was meant to *transform* the AI output,
+          // which is not the current design based on the prompt. The upload template *guides* extraction.
+          
           const extractedValues = {
             date: aiOutput.date,
             supplier: aiOutput.supplier,
-            products: aiOutput.products || [],
+            products: rawProducts, // Store the products as returned by AI (or OCR fallback)
             totalPrice: aiOutput.totalPrice,
             currency: aiOutput.currency,
             documentLanguage: aiOutput.documentLanguage,
+            // products_source: productsExtractedBy // Optional for debugging
           };
           
           const processedItem: ExtractedDataItem = { 
@@ -212,8 +293,8 @@ export default function Home() {
           setExtractedData(prev => prev.map(d => d.id === item.id ? processedItem : d));
           toast({
             title: "Fișier procesat",
-            description: `${item.fileName} a fost procesat cu succes.`,
-            variant: "default",
+            description: `${item.fileName} a fost procesat (Produse via ${productsExtractedBy}).`,
+            variant: "success",
           });
 
         } else {
@@ -222,14 +303,14 @@ export default function Home() {
             fileName: item.fileName,
             rawPdfUrl: item.rawPdfUrl,
             status: 'needs_validation' as PdfStatus, 
-            errorMessage: "AI-ul nu a putut extrage datele sau a returnat un răspuns gol.",
+            errorMessage: "AI-ul și OCR fallback nu au putut extrage datele.",
             extractedValues: {},
             activeTemplateId: currentUploadTemplate?.id || null,
           };
           setExtractedData(prev => prev.map(d => d.id === item.id ? validationItem : d));
           toast({
             title: "Validare necesară",
-            description: `${item.fileName} necesită validare. AI-ul nu a putut extrage datele.`,
+            description: `${item.fileName} necesită validare. AI-ul și fallback-ul nu au putut extrage datele.`,
             variant: "warning", 
           });
         }
@@ -240,13 +321,13 @@ export default function Home() {
             fileName: item.fileName,
             rawPdfUrl: item.rawPdfUrl,
             status: 'error' as PdfStatus, 
-            errorMessage: error.message || "A apărut o eroare la procesarea AI.",
+            errorMessage: error.message || "A apărut o eroare la procesare.",
             extractedValues: {},
             activeTemplateId: currentUploadTemplate?.id || null,
         };
         setExtractedData(prev => prev.map(d => d.id === item.id ? errorItem : d));
         toast({
-          title: "Eroare procesare AI",
+          title: "Eroare procesare",
           description: `A apărut o eroare la procesarea fișierului ${item.fileName}.`,
           variant: "destructive",
         });
@@ -262,6 +343,7 @@ export default function Home() {
      toast({
       title: "Modificare salvată",
       description: `Modificările pentru ${updatedItem.fileName} au fost salvate.`,
+      variant: "success"
     });
   }, [toast]);
 
@@ -300,9 +382,10 @@ export default function Home() {
             return;
         }
 
+        // Filter parent schema fields based on selectedExportColumns *excluding* 'products' if it's there by mistake for line_items export
         const parentSchemaFields = MOCK_SCHEMA.fields.filter(field => selectedExportColumns.includes(field.key as string) && field.key !== 'products');
         const parentHeaders = parentSchemaFields.map(field => field.label);
-        const productSpecificHeaders = exportTemplate.columns;
+        const productSpecificHeaders = exportTemplate.columns; // These are the actual column names from the template
         csvHeaders = [...parentHeaders, ...productSpecificHeaders];
 
         relevantData.forEach(item => {
@@ -327,36 +410,76 @@ export default function Home() {
             if (item.extractedValues.products && item.extractedValues.products.length > 0) {
                 item.extractedValues.products.forEach(product => {
                     const productRowPart = exportTemplate.columns.map(colKey => {
-                        const val = product[colKey];
+                        // The product object might have keys like 'item_code', 'name', 'Menge', etc.
+                        // We need to find the value from the product object that corresponds to the colKey.
+                        // This requires a mapping logic if colKey is 'Artikelnummer' and product has 'item_code'.
+                        // For simplicity, we assume product keys match template column names for now or AI has done the mapping.
+                        // Or, we can try to map based on common AI output fields.
+                        let val = product[colKey]; // Direct match first
+
+                        // Heuristic mapping if direct match fails and template uses standard German terms
+                        if (val === undefined || val === null) {
+                            const colKeyLower = colKey.toLowerCase();
+                            if (colKeyLower.includes('artikelnummer') || colKeyLower.includes('item number') || colKeyLower.includes('code')) val = product.item_code;
+                            else if (colKeyLower.includes('artikelbezeichnung') || colKeyLower.includes('item description') || colKeyLower.includes('name')) val = product.name;
+                            else if (colKeyLower.includes('menge') || colKeyLower.includes('quantity')) val = product.quantity;
+                            else if (colKeyLower.includes('einzelpreis') || colKeyLower.includes('unit price')) val = product.price;
+                            // For 'Gesamtpreis', it might not be directly on the line item from AI, or needs calculation
+                            else if (colKeyLower.includes('gesamtpreis') || colKeyLower.includes('total price')) {
+                                if (product.quantity !== undefined && product.price !== undefined) {
+                                   const q = Number(product.quantity);
+                                   const p = Number(product.price);
+                                   if (!isNaN(q) && !isNaN(p)) val = (q * p).toFixed(2);
+                                }
+                            }
+                        }
+
                         if (val === undefined || val === null) return '';
-                         // Aici s-ar putea adauga formatare specifica pentru tipuri de date din produs (ex: numere, moneda)
+                        if (typeof val === 'number' && (colKey.toLowerCase().includes('price') || colKey.toLowerCase().includes('preis'))) {
+                             return `${val.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
+                        }
                         return String(val).replace(/"/g, '""');
                     });
                     csvRows.push([...parentRowPart, ...productRowPart]);
                 });
-            } else {
-                 // Include rândul părinte chiar dacă nu are produse, dacă sunt selectate coloane părinte
-                if (parentSchemaFields.length > 0) {
-                    const emptyProductPart = exportTemplate.columns.map(() => '');
-                    csvRows.push([...parentRowPart, ...emptyProductPart]);
-                }
+            } else if (parentSchemaFields.length > 0) { // Only add empty product rows if parent data exists
+                const emptyProductPart = exportTemplate.columns.map(() => '');
+                csvRows.push([...parentRowPart, ...emptyProductPart]);
             }
         });
-         if (csvRows.length === 0 && parentSchemaFields.length === 0 && productSpecificHeaders.length > 0 && relevantData.some(item => item.extractedValues.products && item.extractedValues.products.length > 0)) {
-           // Caz special: doar coloane de produs selectate, exportam doar liniile de produse
-            relevantData.forEach(item => {
+        
+        // If only product columns were selected for export, and no parent columns
+        if (parentSchemaFields.length === 0 && productSpecificHeaders.length > 0 && csvRows.length === 0 && relevantData.some(item => item.extractedValues.products && item.extractedValues.products.length > 0)) {
+             relevantData.forEach(item => {
                 if (item.extractedValues.products && item.extractedValues.products.length > 0) {
                     item.extractedValues.products.forEach(product => {
                         const productRowPart = exportTemplate.columns.map(colKey => {
-                            const val = product[colKey];
+                            let val = product[colKey];
+                             if (val === undefined || val === null) {
+                                const colKeyLower = colKey.toLowerCase();
+                                if (colKeyLower.includes('artikelnummer') || colKeyLower.includes('item number') || colKeyLower.includes('code')) val = product.item_code;
+                                else if (colKeyLower.includes('artikelbezeichnung') || colKeyLower.includes('item description') || colKeyLower.includes('name')) val = product.name;
+                                else if (colKeyLower.includes('menge') || colKeyLower.includes('quantity')) val = product.quantity;
+                                else if (colKeyLower.includes('einzelpreis') || colKeyLower.includes('unit price')) val = product.price;
+                                else if (colKeyLower.includes('gesamtpreis') || colKeyLower.includes('total price')) {
+                                   if (product.quantity !== undefined && product.price !== undefined) {
+                                       const q = Number(product.quantity);
+                                       const p = Number(product.price);
+                                       if (!isNaN(q) && !isNaN(p)) val = (q * p).toFixed(2);
+                                    }
+                                }
+                            }
                             if (val === undefined || val === null) return '';
+                            if (typeof val === 'number' && (colKey.toLowerCase().includes('price') || colKey.toLowerCase().includes('preis'))) {
+                                return `${val.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
+                            }
                             return String(val).replace(/"/g, '""');
                         });
                         csvRows.push([...productRowPart]);
                     });
                 }
             });
-            csvHeaders = [...productSpecificHeaders]; // Asiguram ca headerul reflecta doar coloanele de produs
+            csvHeaders = [...productSpecificHeaders];
         }
 
 
@@ -381,14 +504,30 @@ export default function Home() {
 
                 if (schemaField.key === 'products' && Array.isArray(value)) {
                     const currency = item.extractedValues.currency || '';
-                    const extractionTemplate = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
+                    // For summary, we use the AI's generic fields if no specific template was used for upload
+                    // or if the upload template's columns are not known/standard.
+                    // If an upload template *was* used, ideally its columns are what we display.
+                    const currentItemUploadTemplate = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
                   
                     return value.map((p: Product) => { 
-                        if (extractionTemplate && extractionTemplate.columns.length > 0) {
-                            return extractionTemplate.columns.map(colKey => {
-                                const colValue = p[colKey]; 
-                                if (colValue === undefined || colValue === null) return ''; 
-                                if (typeof colValue === 'number' && (
+                        if (currentItemUploadTemplate && currentItemUploadTemplate.columns.length > 0) {
+                            // Display product summary using columns from its upload template
+                            return currentItemUploadTemplate.columns.map(colKey => {
+                                const colValue = p[colKey] ?? p[colKey.toLowerCase()] ?? p[colKey.toUpperCase()]; // Try to match case-insensitively for safety
+                                
+                                // Heuristic mapping for summary if direct key match fails
+                                let finalColValue = colValue;
+                                if (finalColValue === undefined || finalColValue === null) {
+                                    const colKeyLower = colKey.toLowerCase();
+                                    if (colKeyLower.includes('code') || colKeyLower.includes('sku') || colKeyLower.includes('artikelnummer')) finalColValue = p.item_code;
+                                    else if (colKeyLower.includes('name') || colKeyLower.includes('bezeichnung') || colKeyLower.includes('description')) finalColValue = p.name;
+                                    else if (colKeyLower.includes('qty') || colKeyLower.includes('menge') || colKeyLower.includes('quantity')) finalColValue = p.quantity;
+                                    else if (colKeyLower.includes('price') || colKeyLower.includes('preis') || colKeyLower.includes('einzelpreis')) finalColValue = p.price;
+                                }
+
+
+                                if (finalColValue === undefined || finalColValue === null) return `${colKey}: N/A`;
+                                if (typeof finalColValue === 'number' && (
                                     colKey.toLowerCase().includes('price') || 
                                     colKey.toLowerCase().includes('preis') || 
                                     colKey.toLowerCase().includes('valoare') || 
@@ -396,11 +535,12 @@ export default function Home() {
                                     colKey.toLowerCase().includes('sum') || 
                                     colKey.toLowerCase().includes('betrag')
                                 )) {
-                                    return `${colValue.toFixed(2)} ${currency}`.trim();
+                                    return `${colKey}: ${finalColValue.toFixed(2)} ${currency}`.trim();
                                 }
-                                return String(colValue).replace(/"/g, '""'); 
+                                return `${colKey}: ${String(finalColValue).replace(/"/g, '""')}`;
                             }).join(' | ');
                         } else {
+                            // Fallback to generic summary if no upload template or it has no columns
                             const pName = p.name || 'N/A';
                             const pQty = (typeof p.quantity === 'number' || typeof p.quantity === 'string') && p.quantity !== null && p.quantity !== undefined ? p.quantity : 'N/A';
                             const pPrice = typeof p.price === 'number' && p.price !== null && p.price !== undefined ? `${p.price.toFixed(2)} ${currency}`.trim() : 'N/A';
@@ -423,10 +563,10 @@ export default function Home() {
     }
 
     let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += csvHeaders.join(",") + "\r\n";
+    csvContent += csvHeaders.join(",") + "\n";
     csvRows.forEach(rowArray => {
       let row = rowArray.map(cell => `"${cell}"`).join(",");
-      csvContent += row + "\r\n";
+      csvContent += row + "\n";
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -440,6 +580,7 @@ export default function Home() {
     toast({
       title: "Export CSV finalizat",
       description: "Datele au fost exportate cu succes.",
+      variant: "success"
     });
   }, [extractedData, toast, selectedExportColumns, templates, productExportFormat, productLineExportTemplateId]);
 
@@ -451,7 +592,7 @@ export default function Home() {
         }
       });
     };
-  }, [extractedData]);
+  }, [extractedData]); // Only re-run if extractedData changes.
 
 
   return (
@@ -474,13 +615,13 @@ export default function Home() {
                     onValueChange={(value) => setUploadTemplateId(value === 'none' ? null : value)}
                   >
                   <SelectTrigger id="upload-template-select" className="rounded-md">
-                    <SelectValue placeholder="Extragere standard" />
+                    <SelectValue placeholder="Extragere standard (AI)" />
                   </SelectTrigger>
                   <SelectContent className="rounded-md">
                     <SelectGroup>
                       <SelectLabel>Șabloane Disponibile</SelectLabel>
-                      <SelectItem value="none">Extragere standard (Nume, Cant., Preț)</SelectItem>
-                      {templates.map(template => (
+                      <SelectItem value="none">Extragere standard (Nume, Cant., Preț, Cod)</SelectItem>
+                      {templates.filter(t => !t.isDefault).map(template => ( // Exclude default ERPNext from this specific dropdown if needed
                         <SelectItem key={template.id} value={template.id}>
                           {template.name}
                         </SelectItem>
@@ -489,7 +630,7 @@ export default function Home() {
                   </SelectContent>
                 </Select>
                  <p className="text-xs text-muted-foreground">
-                  Utilizat la procesarea inițială a PDF-urilor pentru a structura datele din liniile de produse.
+                  Ghidează AI-ul pentru extragerea câmpurilor specifice din liniile de produse.
                 </p>
               </div>
               <Button variant="outline" className="w-full rounded-md" onClick={() => setIsTemplateManagerOpen(true)}>
@@ -507,12 +648,12 @@ export default function Home() {
                 <div className="space-y-2">
                   <Label htmlFor="product-export-format-select">Format Export Produse</Label>
                   <Select value={productExportFormat} onValueChange={(value) => setProductExportFormat(value as ProductExportFormat)}>
-                    <SelectTrigger id="product-export-format-select">
+                    <SelectTrigger id="product-export-format-select" className="rounded-md">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="rounded-md">
                       <SelectItem value="summary">Sumar (Produse într-o singură coloană)</SelectItem>
-                      <SelectItem value="line_items">Detaliat (Fiecare produs/coloană pe rând nou)</SelectItem>
+                      <SelectItem value="line_items">Detaliat (Fiecare produs pe rând nou, coloane mapate)</SelectItem>
                     </SelectContent>
                   </Select>
                    <p className="text-xs text-muted-foreground">
@@ -526,12 +667,13 @@ export default function Home() {
                     onValueChange={(value) => setProductLineExportTemplateId(value === "none" ? null : value)}
                     disabled={productExportFormat !== 'line_items'}
                   >
-                    <SelectTrigger id="export-template-select">
+                    <SelectTrigger id="export-template-select" className="rounded-md">
                       <SelectValue placeholder="Selectați un șablon" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="rounded-md">
                        <SelectGroup>
                         <SelectLabel>Șabloane pentru Coloane Produs</SelectLabel>
+                        {/* <SelectItem value="none" disabled={templates.length > 0}>Niciunul (folosește coloane standard AI)</SelectItem> */}
                         {templates.length === 0 && <SelectItem value="none" disabled>Nu sunt șabloane definite</SelectItem>}
                         {templates.map(template => (
                           <SelectItem key={template.id} value={template.id}>
@@ -542,7 +684,7 @@ export default function Home() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    Activ doar pentru formatul "Detaliat". Definește coloanele pentru fiecare linie de produs.
+                    Activ doar pentru formatul "Detaliat". Definește coloanele și ordinea lor pentru fiecare linie de produs în CSV.
                   </p>
                 </div>
               </CardContent>
