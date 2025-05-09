@@ -33,16 +33,37 @@ const fileToDataUri = (file: File): Promise<string> => {
 
 const erpNextDefaultTemplate: InvoiceTemplate = {
   id: 'erpnext-article-default',
-  name: 'ERPNext Article Default',
-  columns: ['item_code', 'item_name', 'qty', 'rate', 'amount'], // Standard ERPNext item fields
+  name: 'ERPNext Article Default (Export)',
+  columns: ['item_code', 'item_name', 'qty', 'uom', 'rate', 'amount'], // Standard ERPNext item fields for import
   isDefault: true,
+  forUpload: false, // This template is primarily for export
 };
 
-const comprehensiveTemplate: InvoiceTemplate = {
-  id: 'comprehensive-invoice-details-template',
-  name: 'Comprehensive Line Item Details (Upload & Export)',
-  columns: ['item_code', 'description', 'quantity', 'unit', 'unit_price', 'discount_value', 'tax_percent', 'net_amount', 'tax_amount', 'gross_amount'],
+const aiStandardUploadTemplate: InvoiceTemplate = {
+  id: 'ai-standard-upload-template',
+  name: 'AI Standard Extraction (Upload)',
+  // These are the fields AI is generally good at finding without specific column name hints.
+  // Corresponds to a simplified version of ProductSchema for prompting.
+  columns: ['item_code', 'name', 'quantity', 'price', 'amount'], 
+  isDefault: true, // Default for upload
+  forUpload: true,
+};
+
+const comprehensiveUploadTemplate: InvoiceTemplate = {
+  id: 'comprehensive-invoice-upload-template',
+  name: 'Comprehensive Details (Upload)',
+  // These are most fields from ProductSchema. AI will try to find all of them.
+  columns: ['item_code', 'name', 'description', 'quantity', 'unit', 'price', 'discount_value', 'discount_percent', 'net_amount', 'tax_percent', 'tax_amount', 'amount'],
   isDefault: false,
+  forUpload: true,
+};
+
+const comprehensiveExportTemplate: InvoiceTemplate = {
+  id: 'comprehensive-invoice-export-template',
+  name: 'Comprehensive Details (Export)',
+  columns: ['item_code', 'name', 'description', 'quantity', 'unit', 'price', 'discount_value', 'discount_percent', 'net_amount', 'tax_percent', 'tax_amount', 'amount'],
+  isDefault: false,
+  forUpload: false,
 };
 
 
@@ -55,11 +76,11 @@ export default function Home() {
   const { toast } = useToast();
 
   const [templates, setTemplates] = useState<InvoiceTemplate[]>([]);
-  const [uploadTemplateId, setUploadTemplateId] = useState<string | null>(null);
+  const [uploadTemplateId, setUploadTemplateId] = useState<string | null>(aiStandardUploadTemplate.id); // Default to AI standard
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
   
   const [productExportFormat, setProductExportFormat] = useState<ProductExportFormat>('summary');
-  const [productLineExportTemplateId, setProductLineExportTemplateId] = useState<string | null>(null);
+  const [productLineExportTemplateId, setProductLineExportTemplateId] = useState<string | null>(erpNextDefaultTemplate.id); // Default to ERPNext
 
 
   useEffect(() => {
@@ -90,39 +111,40 @@ export default function Home() {
         }
     }
 
-
+    // Initialize templates
     const storedTemplates = localStorage.getItem('pdfHarvesterTemplates');
     let initialTemplates: InvoiceTemplate[] = [];
     if (storedTemplates) {
       try {
         initialTemplates = JSON.parse(storedTemplates) as InvoiceTemplate[];
-        if (!Array.isArray(initialTemplates)) {
-          initialTemplates = [];
-        }
+        if (!Array.isArray(initialTemplates)) initialTemplates = [];
       } catch (error) {
         console.error("Failed to parse stored templates:", error);
         initialTemplates = [];
       }
     }
     
-    // Ensure default templates are present
-    const erpNextTemplateExists = initialTemplates.some(t => t.id === erpNextDefaultTemplate.id);
-    if (!erpNextTemplateExists) {
-      initialTemplates.unshift(erpNextDefaultTemplate); // Add to beginning
-    }
-
-    const comprehensiveTemplateExists = initialTemplates.some(t => t.id === comprehensiveTemplate.id);
-    if (!comprehensiveTemplateExists) {
-      initialTemplates.push(comprehensiveTemplate); // Add to end
-    }
+    // Ensure default templates are present and correctly configured
+    const defaultTpls = [erpNextDefaultTemplate, aiStandardUploadTemplate, comprehensiveUploadTemplate, comprehensiveExportTemplate];
+    defaultTpls.forEach(defTpl => {
+        const existing = initialTemplates.find(t => t.id === defTpl.id);
+        if (existing) { // Update existing with default props if necessary
+            existing.isDefault = defTpl.isDefault;
+            existing.forUpload = defTpl.forUpload;
+            existing.name = defTpl.name; // Ensure name is also updated from default
+            existing.columns = defTpl.columns; // Ensure columns are also updated
+        } else {
+            initialTemplates.push({...defTpl});
+        }
+    });
     setTemplates(initialTemplates);
 
 
     const storedUploadTemplateId = localStorage.getItem('pdfHarvesterUploadTemplateId');
-    if (storedUploadTemplateId && storedUploadTemplateId !== "null") { 
+    if (storedUploadTemplateId && initialTemplates.some(t => t.id === storedUploadTemplateId && t.forUpload)) { 
         setUploadTemplateId(storedUploadTemplateId);
     } else {
-        setUploadTemplateId(null); 
+        setUploadTemplateId(aiStandardUploadTemplate.id); // Default if not found or invalid
     }
     
     const storedProductExportFormat = localStorage.getItem('pdfHarvesterProductExportFormat');
@@ -131,13 +153,11 @@ export default function Home() {
     }
 
     const storedProductLineExportTemplateId = localStorage.getItem('pdfHarvesterProductLineExportTemplateId');
-    if (storedProductLineExportTemplateId && storedProductLineExportTemplateId !== "null") {
+    if (storedProductLineExportTemplateId && initialTemplates.some(t => t.id === storedProductLineExportTemplateId && !t.forUpload)) {
         setProductLineExportTemplateId(storedProductLineExportTemplateId);
     } else {
-        const defaultExportTemplate = initialTemplates.find(t => t.id === erpNextDefaultTemplate.id) || initialTemplates.find(t => t.id === comprehensiveTemplate.id) || (initialTemplates.length > 0 ? initialTemplates[0] : null);
-        if (defaultExportTemplate) {
-            setProductLineExportTemplateId(defaultExportTemplate.id);
-        }
+        const defaultExportTemplate = initialTemplates.find(t => t.id === erpNextDefaultTemplate.id) || initialTemplates.find(t => !t.forUpload && t.id === comprehensiveExportTemplate.id) || initialTemplates.find(t => !t.forUpload);
+        setProductLineExportTemplateId(defaultExportTemplate ? defaultExportTemplate.id : null);
     }
 
   }, []); 
@@ -145,15 +165,21 @@ export default function Home() {
   useEffect(() => {
      localStorage.setItem('pdfHarvesterTemplates', JSON.stringify(templates));
      if (templates.length > 0) {
-        const currentExportTemplateExists = templates.some(t => t.id === productLineExportTemplateId);
-        if (!currentExportTemplateExists || !productLineExportTemplateId) {
-            const defaultExportTemplate = templates.find(t => t.id === erpNextDefaultTemplate.id) || templates.find(t => t.id === comprehensiveTemplate.id) || templates[0];
-            setProductLineExportTemplateId(defaultExportTemplate.id);
+        const currentUploadTemplateIsValid = uploadTemplateId && templates.some(t => t.id === uploadTemplateId && t.forUpload);
+        if (!currentUploadTemplateIsValid) {
+            setUploadTemplateId(aiStandardUploadTemplate.id);
+        }
+
+        const currentExportTemplateIsValid = productLineExportTemplateId && templates.some(t => t.id === productLineExportTemplateId && !t.forUpload);
+        if (!currentExportTemplateIsValid) {
+            const defaultExportTpl = templates.find(t => t.id === erpNextDefaultTemplate.id) || templates.find(t => !t.forUpload);
+            setProductLineExportTemplateId(defaultExportTpl ? defaultExportTpl.id : null);
         }
      } else {
         setProductLineExportTemplateId(null);
+        setUploadTemplateId(null);
      }
-  }, [templates, productLineExportTemplateId]); // Added productLineExportTemplateId to ensure it reacts to its changes
+  }, [templates, uploadTemplateId, productLineExportTemplateId]);
 
 
   useEffect(() => {
@@ -168,7 +194,7 @@ export default function Home() {
     if (uploadTemplateId) {
       localStorage.setItem('pdfHarvesterUploadTemplateId', uploadTemplateId);
     } else {
-      localStorage.setItem('pdfHarvesterUploadTemplateId', "null"); 
+      localStorage.removeItem('pdfHarvesterUploadTemplateId');
     }
   }, [uploadTemplateId]);
 
@@ -180,35 +206,38 @@ export default function Home() {
     if (productLineExportTemplateId) {
       localStorage.setItem('pdfHarvesterProductLineExportTemplateId', productLineExportTemplateId);
     } else {
-      localStorage.setItem('pdfHarvesterProductLineExportTemplateId', "null");
+      localStorage.removeItem('pdfHarvesterProductLineExportTemplateId');
     }
   }, [productLineExportTemplateId]);
 
 
   const handleTemplatesChange = (updatedTemplates: InvoiceTemplate[]) => {
-    // Ensure default templates are not removed or their `isDefault` status is not lost
-    const erpNextTpl = updatedTemplates.find(t => t.id === erpNextDefaultTemplate.id);
-    if (erpNextTpl) {
-        erpNextTpl.isDefault = true; // Enforce
-    } else {
-        // If somehow deleted, add it back
-        updatedTemplates.unshift({...erpNextDefaultTemplate, isDefault: true});
-    }
+    const defaultTpls = [erpNextDefaultTemplate, aiStandardUploadTemplate, comprehensiveUploadTemplate, comprehensiveExportTemplate];
+    let newTemplates = [...updatedTemplates];
+
+    defaultTpls.forEach(defTpl => {
+        const existingIndex = newTemplates.findIndex(t => t.id === defTpl.id);
+        if (existingIndex > -1) { // Update existing default template properties
+            newTemplates[existingIndex] = {
+                ...newTemplates[existingIndex], // Keep user changes to name/columns if not locked
+                name: defTpl.isDefault ? defTpl.name : newTemplates[existingIndex].name, // Default names for default templates
+                columns: defTpl.isDefault ? defTpl.columns : newTemplates[existingIndex].columns, // Default columns for default templates
+                isDefault: defTpl.isDefault,
+                forUpload: defTpl.forUpload,
+            };
+        } else { // Add if missing (should not happen if initialized correctly)
+            newTemplates.push({...defTpl});
+        }
+    });
     
-    // Ensure comprehensive template is not accidentally removed (unless user explicitly deletes non-default one via UI)
-    // The UI prevents deletion of isDefault templates, so ERPNext is safe.
-    // This logic here is more about programmatic changes.
-    // If this function is ONLY called from TemplateManagerDialog, this check might be redundant
-    // as the dialog handles its own logic for adding/removing.
-    const compTpl = updatedTemplates.find(t => t.id === comprehensiveTemplate.id);
-    if (!compTpl && !comprehensiveTemplate.isDefault) { // Add it back if it's our non-default comprehensive one and it's gone
-        updatedTemplates.push({...comprehensiveTemplate});
+    setTemplates(newTemplates);
+
+    if (uploadTemplateId && !newTemplates.find(t => t.id === uploadTemplateId && t.forUpload)) {
+      setUploadTemplateId(aiStandardUploadTemplate.id); 
     }
-
-
-    setTemplates(updatedTemplates);
-    if (uploadTemplateId && !updatedTemplates.find(t => t.id === uploadTemplateId)) {
-      setUploadTemplateId(null); 
+    if (productLineExportTemplateId && !newTemplates.find(t => t.id === productLineExportTemplateId && !t.forUpload)) {
+      const fallbackExport = newTemplates.find(t => t.id === erpNextDefaultTemplate.id) || newTemplates.find(t => !t.forUpload);
+      setProductLineExportTemplateId(fallbackExport ? fallbackExport.id : null);
     }
   };
 
@@ -216,7 +245,7 @@ export default function Home() {
     if (isProcessingFiles) return;
     setIsProcessingFiles(true);
 
-    const currentUploadTemplate = uploadTemplateId ? templates.find(t => t.id === uploadTemplateId) : null;
+    const currentUploadTemplate = uploadTemplateId ? templates.find(t => t.id === uploadTemplateId && t.forUpload) : templates.find(t => t.id === aiStandardUploadTemplate.id);
 
     const newUploadItems: UploadQueueItem[] = files.map(file => ({
       id: `${file.name}-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
@@ -250,38 +279,26 @@ export default function Home() {
         const pdfDataUri = await fileToDataUri(item.fileObject);
         const aiInput: ExtractInvoiceInput = { 
           pdfDataUri,
-          lineItemColumns: currentUploadTemplate?.columns 
+          // Pass columns from the selected upload template, or undefined if AI standard (which means prompt handles it)
+          lineItemColumns: currentUploadTemplate?.id !== aiStandardUploadTemplate.id ? currentUploadTemplate?.columns : undefined
         };
         let aiOutput: ExtractInvoiceOutput | null = await extractInvoiceData(aiInput);
         let productsExtractedBy = 'ai';
 
         const aiProducts = aiOutput?.products || [];
         const productsAreUnsatisfactory = aiProducts.length === 0 || 
-                                         aiProducts.every(p => !p.name && !p.quantity && !p.item_code);
+                                         aiProducts.every(p => !p.name && !p.quantity && !p.item_code && !p.price && !p.amount);
 
         if (aiOutput && productsAreUnsatisfactory) {
           toast({
             title: "Extragere AI produse eșuată/incompletă",
             description: `Se încearcă fallback OCR SIMULAT pentru ${item.fileName}.`,
-            variant: "info",
+            variant: "default", // Using default instead of info based on user feedback
           });
           const fallbackProducts = await runOcrFallbackExtraction(pdfDataUri);
           if (fallbackProducts && fallbackProducts.length > 0) {
-            if (aiOutput) { 
-                aiOutput.products = fallbackProducts;
-                productsExtractedBy = 'ocr_fallback (simulated)';
-            } else {
-                // This case should be rare if productsAreUnsatisfactory implies aiOutput exists
-                aiOutput = { 
-                    products: fallbackProducts,
-                    date: null,
-                    supplier: null,
-                    totalPrice: null,
-                    currency: null,
-                    documentLanguage: null,
-                };
-                productsExtractedBy = 'ocr_fallback (simulated) - AI output was null';
-            }
+             aiOutput.products = fallbackProducts.map(fp => ({...fp})); // Ensure it's a new array of objects
+             productsExtractedBy = 'ocr_fallback (simulated)';
           }
         }
 
@@ -295,6 +312,12 @@ export default function Home() {
             totalPrice: aiOutput.totalPrice,
             currency: aiOutput.currency,
             documentLanguage: aiOutput.documentLanguage,
+            invoiceNumber: aiOutput.invoiceNumber,
+            subtotal: aiOutput.subtotal,
+            totalDiscountAmount: aiOutput.totalDiscountAmount,
+            totalTaxAmount: aiOutput.totalTaxAmount,
+            paymentTerms: aiOutput.paymentTerms,
+            dueDate: aiOutput.dueDate,
           };
           
           const processedItem: ExtractedDataItem = { 
@@ -343,7 +366,7 @@ export default function Home() {
         setExtractedData(prev => prev.map(d => d.id === item.id ? errorItem : d));
         toast({
           title: "Eroare procesare",
-          description: `A apărut o eroare la procesarea fișierului ${item.fileName}.`,
+          description: `A apărut o eroare la procesarea fișierului ${item.fileName}. Detalii: ${error.message}`,
           variant: "destructive",
         });
       }
@@ -371,7 +394,7 @@ export default function Home() {
     toast({
       title: "Fișier șters",
       description: `Fișierul ${itemToDelete?.fileName || 'selectat'} a fost șters.`,
-      variant: "destructive"
+      variant: "destructive" // Kept destructive for delete action
     });
   }, [extractedData, toast]);
 
@@ -385,39 +408,42 @@ export default function Home() {
 
     let csvHeaders: string[] = [];
     let csvRows: string[][] = [];
+    
+    const keyMap: Record<string, keyof Product | string> = {
+        // Comprehensive list for better mapping flexibility
+        'artikelnummer': 'item_code', 'item_code': 'item_code', 'item code': 'item_code', 'sku': 'item_code', 'cod articol': 'item_code', 'part no.': 'item_code',
+        'artikelbezeichnung': 'name', 'item_name': 'name', 'item name': 'name', 'description': 'name', 'denumire': 'name', 'bezeichnung': 'name', 'product name': 'name', 'descriere': 'name', 'nume produs': 'name',
+        'menge': 'quantity', 'qty': 'quantity', 'anzahl': 'quantity', 'cantitate': 'quantity',
+        'einheit': 'unit', 'uom': 'unit', 'unit_of_measure': 'unit', 'unitate masura': 'unit', 'um': 'unit',
+        'einzelpreis': 'price', 'rate': 'price', 'unit price': 'price', 'pret unitar': 'price', 'unit_price': 'price', 'preis': 'price', 'unit_price_net': 'price', 'net unit price': 'price',
+        'rabatt_wert': 'discount_value', 'discount_value': 'discount_value', 'discount amount': 'discount_value', 'valoare reducere': 'discount_value', 'line discount': 'discount_value',
+        'rabatt_prozent': 'discount_percent', 'discount_percent': 'discount_percent', 'discount rate': 'discount_percent', 'procent reducere': 'discount_percent',
+        'netto_betrag_linie': 'net_amount', 'net_amount': 'net_amount', 'line net amount': 'net_amount', 'valoare neta': 'net_amount', 'net total line': 'net_amount',
+        'mwst_prozent': 'tax_percent', 'tax_percent': 'tax_percent', 'vat_percentage': 'tax_percent', 'tax_rate': 'tax_percent', 'cota_tva': 'tax_percent', 'tax rate percent': 'tax_percent', 'ust-satz': 'tax_percent',
+        'steuer_betrag': 'tax_amount', 'tax_amount': 'tax_amount', 'vat_amount': 'tax_amount', 'valoare_tva': 'tax_amount', 'tax total line': 'tax_amount', 'mwst-betrag': 'tax_amount',
+        'gesamtpreis': 'amount', 'amount': 'amount', 'brutto_betrag': 'amount', 'gross_amount': 'amount', 'line total': 'amount', 'valoare totala': 'amount', 'line_total_gross_amount': 'amount', 'gross_total': 'amount', 'total linie': 'amount',
+        // User specific request for ERPNext style export
+        'item_group': 'item_group', // Will be handled specially
+        'stock_uom': 'stock_uom', // Will be handled specially
+    };
+
 
     if (productExportFormat === 'line_items') {
         if (!productLineExportTemplateId) {
             toast({ title: "Selectați Șablon Export Produse", description: "Pentru exportul detaliat pe linii de produse, selectați un șablon de coloane pentru produse.", variant: "warning" });
             return;
         }
-        const exportTemplate = templates.find(t => t.id === productLineExportTemplateId);
+        const exportTemplate = templates.find(t => t.id === productLineExportTemplateId && !t.forUpload);
         if (!exportTemplate) {
             toast({ title: "Șablon Export Produse Invalid", description: "Șablonul selectat pentru exportul liniilor de produse nu a fost găsit.", variant: "warning" });
             return;
         }
 
         const parentSchemaFields = MOCK_SCHEMA.fields.filter(field => selectedExportColumns.includes(field.key as string) && field.key !== 'products');
-        const parentHeaders = parentSchemaFields.map(field => field.key as string);
-        const productSpecificHeaders = exportTemplate.columns; 
+        const parentHeaders = parentSchemaFields.map(field => field.label); // Use label for header
+        const productSpecificHeaders = exportTemplate.columns.map(col => col); // Raw column name from template
         csvHeaders = [...parentHeaders, ...productSpecificHeaders];
         
-        const keyMap: Record<string, keyof Product | string> = {
-            'artikelnummer': 'item_code', 'item_code': 'item_code', 'item code': 'item_code', 'sku': 'item_code',
-            'artikelbezeichnung': 'name', 'item_name': 'name', 'item name': 'name', 'description': 'name', 'denumire': 'name', 'bezeichnung': 'name', 'product name': 'name',
-            'menge': 'quantity', 'qty': 'quantity', 'anzahl': 'quantity', 'cantitate': 'quantity',
-            'einzelpreis': 'price', 'rate': 'price', 'unit price': 'price', 'pret unitar': 'price', 'unit_price': 'price', 'preis': 'price', 'unit_price_net': 'price',
-            'gesamtpreis': 'amount', /* 'amount' (AI output) is line total */ 'total': 'amount', 'betrag': 'amount', 'line total': 'amount', 'gross_amount': 'amount', 'valoare totala': 'amount', 'line_total_gross_amount': 'amount', 'brutto_betrag': 'amount', 'gross_total': 'amount',
-
-            'unit_of_measure': 'unit', 'unitate masura': 'unit', 'einheit': 'unit',
-            'discount_percentage': 'discount_percent', 'rabatt_prozent': 'discount_percent', 'discount': 'discount_value', // 'discount' can be ambiguous, map to value if template asks for value
-            'discount_amount': 'discount_value', 'rabatt_wert': 'discount_value', 'discount_value': 'discount_value',
-            'line_net_amount': 'net_amount', 'netto_betrag_linie': 'net_amount', 'net_total': 'net_amount',
-            'vat_percentage': 'tax_percent', 'tax_rate': 'tax_percent', 'mwst_prozent': 'tax_percent', 'cota_tva': 'tax_percent', 'tax_rate_percent': 'tax_percent',
-            'vat_amount': 'tax_amount', 'steuer_betrag': 'tax_amount', 'valoare_tva': 'tax_amount', 'tax_total': 'tax_amount',
-        };
-
-
         relevantData.forEach(item => {
             const parentRowPart = parentSchemaFields.map(schemaField => {
                 let value: any;
@@ -430,7 +456,7 @@ export default function Home() {
                     value = item.extractedValues[schemaField.key as keyof typeof item.extractedValues];
                 }
 
-                if ((schemaField.type === 'number' || schemaField.key === 'totalPrice') && typeof value === 'number') {
+                if ((schemaField.type === 'number' || schemaField.key === 'totalPrice' || schemaField.key === 'subtotal' || schemaField.key === 'totalDiscountAmount' || schemaField.key === 'totalTaxAmount') && typeof value === 'number') {
                     return `${value.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
                 }
                 if (value === undefined || value === null) return '';
@@ -440,30 +466,63 @@ export default function Home() {
             if (item.extractedValues.products && item.extractedValues.products.length > 0) {
                 item.extractedValues.products.forEach(product => {
                     const productRowPart = exportTemplate.columns.map(templateColKey => {
-                        let val = product[templateColKey]; 
-                        if (val === undefined || val === null) {
-                            const mappedKey = keyMap[templateColKey.toLowerCase()];
-                            if (mappedKey) val = product[mappedKey as keyof Product];
+                        let val: any;
+                        // Handle special ERPNext style columns if present in template
+                        if (templateColKey.toLowerCase() === 'item_group') {
+                            val = "Produkt"; // Static value as requested
+                        } else if (templateColKey.toLowerCase() === 'stock_uom') {
+                            val = product.unit || "Stk"; // Use product unit if available, else default to Stk
+                        } else {
+                           // Standard mapping
+                           const mappedKey = keyMap[templateColKey.toLowerCase()];
+                           if (mappedKey) {
+                               val = product[mappedKey as keyof Product];
+                           } else {
+                               // If not in keyMap, try direct access (for custom fields from upload template)
+                               val = product[templateColKey];
+                           }
                         }
-                         // Calculation for gross_amount if not present (simple qty*price)
-                        if ((templateColKey.toLowerCase() === 'gross_amount' || templateColKey.toLowerCase() === 'gesamtpreis' || templateColKey.toLowerCase() === 'amount' || templateColKey.toLowerCase() === 'gross_total') && (val === undefined || val === null)) {
-                            if (product.quantity !== undefined && product.price !== undefined && product.quantity !== null && product.price !== null) {
-                               const q = Number(String(product.quantity).replace(',','.'));
-                               const p = Number(String(product.price).replace(',','.'));
-                               if (!isNaN(q) && !isNaN(p)) val = (q * p); 
+                        
+                        // Calculation for gross_amount ('amount' or similar) if missing and template requests it
+                        const isGrossAmountCol = ['gesamtpreis', 'amount', 'brutto_betrag', 'gross_amount', 'line total', 'valoare totala', 'line_total_gross_amount', 'gross_total', 'total linie'].includes(templateColKey.toLowerCase());
+                        if (isGrossAmountCol && (val === undefined || val === null)) {
+                            const qty = typeof product.quantity === 'number' ? product.quantity : parseFloat(String(product.quantity).replace(',','.'));
+                            const unitPrice = typeof product.price === 'number' ? product.price : parseFloat(String(product.price).replace(',','.'));
+                            const net = typeof product.net_amount === 'number' ? product.net_amount : parseFloat(String(product.net_amount).replace(',','.'));
+                            const taxAmt = typeof product.tax_amount === 'number' ? product.tax_amount : parseFloat(String(product.tax_amount).replace(',','.'));
+                            const discountVal = (typeof product.discount_value === 'number' ? product.discount_value : parseFloat(String(product.discount_value).replace(',','.'))) || 0;
+                            const taxPercent = (typeof product.tax_percent === 'number' ? product.tax_percent : parseFloat(String(product.tax_percent).replace(',','.'))) || 0;
+
+                            if (!isNaN(net) && !isNaN(taxAmt)) {
+                                val = net + taxAmt;
+                            } else if (!isNaN(qty) && !isNaN(unitPrice)) {
+                                let calculatedNet = (qty * unitPrice) - discountVal;
+                                if (!isNaN(taxPercent) && taxPercent > 0) {
+                                    val = calculatedNet * (1 + (taxPercent / 100));
+                                } else {
+                                   val = calculatedNet;
+                                }
                             }
                         }
                         
                         if (val === undefined || val === null) return '';
-                        // For numeric columns (price, amount, totals, discount_value, tax_amount) format with currency
+                        
+                        // Formatting based on column type/name
                         const numericCols = ['price', 'preis', 'rate', 'amount', 'betrag', 'total', 'discount_value', 'tax_amount', 'net_amount', 'gross_amount', 'unit_price', 'net_total', 'tax_total', 'gross_total'];
-                        if (typeof val === 'number' && numericCols.some(nc => templateColKey.toLowerCase().includes(nc))) {
-                             return `${val.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
+                        const percentageCols = ['tax_percent', 'discount_percent', 'tax_rate', 'vat_percentage', 'ust-satz'];
+                        const quantityCols = ['quantity', 'qty', 'menge', 'anzahl', 'cantitate'];
+
+                        if (quantityCols.some(qc => templateColKey.toLowerCase().includes(qc))) {
+                            const numVal = parseFloat(String(val).replace(',','.'));
+                            return isNaN(numVal) ? String(val).replace(/"/g, '""') : String(numVal); // Plain number for quantity
                         }
-                        // For percentage columns, just return the number (AI should provide it as number if it's a rate)
-                        const percentageCols = ['tax_percent', 'discount_percent', 'tax_rate', 'vat_percentage'];
-                         if (typeof val === 'number' && percentageCols.some(pc => templateColKey.toLowerCase().includes(pc))) {
-                            return String(val); // Or val.toFixed(2) + '%' if desired
+                        if (typeof val === 'number') {
+                            if (numericCols.some(nc => templateColKey.toLowerCase().includes(nc))) {
+                                 return `${val.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
+                            }
+                            if (percentageCols.some(pc => templateColKey.toLowerCase().includes(pc))) {
+                                return String(val); 
+                            }
                         }
                         return String(val).replace(/"/g, '""');
                     });
@@ -475,31 +534,60 @@ export default function Home() {
             }
         });
         
-        if (parentSchemaFields.length === 0 && productSpecificHeaders.length > 0 && csvRows.length === 0 && relevantData.some(item => item.extractedValues.products && item.extractedValues.products.length > 0)) {
+        // Handle case where only product columns are selected for export
+        if (parentSchemaFields.length === 0 && productSpecificHeaders.length > 0 && relevantData.some(item => item.extractedValues.products && item.extractedValues.products.length > 0)) {
              relevantData.forEach(item => {
                 if (item.extractedValues.products && item.extractedValues.products.length > 0) {
                     item.extractedValues.products.forEach(product => {
                         const productRowPart = exportTemplate.columns.map(templateColKey => {
-                            let val = product[templateColKey];
-                             if (val === undefined || val === null) {
+                            let val: any;
+                            if (templateColKey.toLowerCase() === 'item_group') {
+                                val = "Produkt";
+                            } else if (templateColKey.toLowerCase() === 'stock_uom') {
+                                val = product.unit || "Stk";
+                            } else {
                                 const mappedKey = keyMap[templateColKey.toLowerCase()];
                                 if (mappedKey) val = product[mappedKey as keyof Product];
+                                else val = product[templateColKey];
                             }
-                            if ((templateColKey.toLowerCase() === 'gross_amount' || templateColKey.toLowerCase() === 'gesamtpreis' || templateColKey.toLowerCase() === 'amount' || templateColKey.toLowerCase() === 'gross_total') && (val === undefined || val === null)) {
-                               if (product.quantity !== undefined && product.price !== undefined && product.quantity !== null && product.price !== null) {
-                                   const q = Number(String(product.quantity).replace(',','.'));
-                                   const p = Number(String(product.price).replace(',','.'));
-                                   if (!isNaN(q) && !isNaN(p)) val = (q * p);
+
+                            const isGrossAmountCol = ['gesamtpreis', 'amount', 'brutto_betrag', 'gross_amount', 'line total', 'valoare totala', 'line_total_gross_amount', 'gross_total', 'total linie'].includes(templateColKey.toLowerCase());
+                            if (isGrossAmountCol && (val === undefined || val === null)) {
+                                const qty = typeof product.quantity === 'number' ? product.quantity : parseFloat(String(product.quantity).replace(',','.'));
+                                const unitPrice = typeof product.price === 'number' ? product.price : parseFloat(String(product.price).replace(',','.'));
+                                const net = typeof product.net_amount === 'number' ? product.net_amount : parseFloat(String(product.net_amount).replace(',','.'));
+                                const taxAmt = typeof product.tax_amount === 'number' ? product.tax_amount : parseFloat(String(product.tax_amount).replace(',','.'));
+                                const discountVal = (typeof product.discount_value === 'number' ? product.discount_value : parseFloat(String(product.discount_value).replace(',','.'))) || 0;
+                                const taxPercent = (typeof product.tax_percent === 'number' ? product.tax_percent : parseFloat(String(product.tax_percent).replace(',','.'))) || 0;
+
+                                if (!isNaN(net) && !isNaN(taxAmt)) {
+                                    val = net + taxAmt;
+                                } else if (!isNaN(qty) && !isNaN(unitPrice)) {
+                                    let calculatedNet = (qty * unitPrice) - discountVal;
+                                    if (!isNaN(taxPercent) && taxPercent > 0) {
+                                        val = calculatedNet * (1 + (taxPercent / 100));
+                                    } else {
+                                       val = calculatedNet;
+                                    }
                                 }
                             }
                             if (val === undefined || val === null) return '';
+
                             const numericCols = ['price', 'preis', 'rate', 'amount', 'betrag', 'total', 'discount_value', 'tax_amount', 'net_amount', 'gross_amount', 'unit_price', 'net_total', 'tax_total', 'gross_total'];
-                            if (typeof val === 'number' && numericCols.some(nc => templateColKey.toLowerCase().includes(nc))) {
-                                return `${val.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
+                            const percentageCols = ['tax_percent', 'discount_percent', 'tax_rate', 'vat_percentage', 'ust-satz'];
+                             const quantityCols = ['quantity', 'qty', 'menge', 'anzahl', 'cantitate'];
+
+                            if (quantityCols.some(qc => templateColKey.toLowerCase().includes(qc))) {
+                                const numVal = parseFloat(String(val).replace(',','.'));
+                                return isNaN(numVal) ? String(val).replace(/"/g, '""') : String(numVal);
                             }
-                            const percentageCols = ['tax_percent', 'discount_percent', 'tax_rate', 'vat_percentage'];
-                            if (typeof val === 'number' && percentageCols.some(pc => templateColKey.toLowerCase().includes(pc))) {
-                                return String(val);
+                            if (typeof val === 'number') {
+                                if (numericCols.some(nc => templateColKey.toLowerCase().includes(nc))) {
+                                    return `${val.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
+                                }
+                                if (percentageCols.some(pc => templateColKey.toLowerCase().includes(pc))) {
+                                    return String(val);
+                                }
                             }
                             return String(val).replace(/"/g, '""');
                         });
@@ -517,7 +605,7 @@ export default function Home() {
           return;
         }
         const exportableSchemaFields = MOCK_SCHEMA.fields.filter(field => selectedExportColumns.includes(field.key as string));
-        csvHeaders = exportableSchemaFields.map(field => field.key as string);
+        csvHeaders = exportableSchemaFields.map(field => field.label); // Use label for header
         
         csvRows = relevantData.map(item => {
             return exportableSchemaFields.map(schemaField => {
@@ -532,49 +620,42 @@ export default function Home() {
 
                 if (schemaField.key === 'products' && Array.isArray(value)) {
                     const currency = item.extractedValues.currency || '';
-                    // For summary, use the template that was active during upload for hinting product fields
-                    const currentItemUploadTemplate = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
+                    const activeUploadTemplateId = item.activeTemplateId || aiStandardUploadTemplate.id;
+                    const summaryTemplate = templates.find(t=> t.id === activeUploadTemplateId && t.forUpload) || templates.find(t => t.id === aiStandardUploadTemplate.id);
                   
                     return value.map((p: Product) => { 
                         let summaryParts: string[] = [];
-                        // Use a small, fixed set of common fields for summary to keep it concise, or rely on upload template.
-                        // For simplicity, let's stick to the original summary logic or enhance it slightly
-                        const displayColumns = currentItemUploadTemplate?.columns || ['item_code', 'name', 'quantity', 'price', 'amount'];
+                        const displayColumns = summaryTemplate?.columns || ['item_code', 'name', 'quantity', 'price', 'amount'];
                         
                         summaryParts = displayColumns.map(colKey => {
-                             const keyMapForSummary: Record<string, keyof Product | string> = {
-                                'item_code': 'item_code', 'artikelnummer': 'item_code',
-                                'name': 'name', 'description': 'name', 'artikelbezeichnung': 'name', 'item_name': 'name',
-                                'quantity': 'quantity', 'menge': 'quantity', 'qty': 'quantity',
-                                'price': 'price', 'unit_price': 'price', 'einzelpreis': 'price', 'rate': 'price',
-                                'amount': 'amount', 'gross_amount': 'amount', 'gesamtpreis': 'amount', 'total': 'amount', 'line_total_gross_amount': 'amount', 'gross_total':'amount',
-                                // Add other relevant comprehensive fields if needed for summary
-                                'unit': 'unit',
-                                'discount_value': 'discount_value',
-                                'tax_percent': 'tax_percent',
-                            };
-                            let productValue = p[colKey];
-                            if (productValue === undefined || productValue === null) {
-                                const mappedKey = keyMapForSummary[colKey.toLowerCase()];
-                                if (mappedKey) productValue = p[mappedKey as keyof Product];
-                            }
+                            const mappedKey = keyMap[colKey.toLowerCase()] || colKey; // Fallback to colKey itself
+                            let productValue = p[mappedKey as keyof Product];
 
                             if (productValue === undefined || productValue === null) return `${colKey}: N/A`;
                             
                             const numericCols = ['price', 'amount', 'discount_value', 'tax_amount', 'net_amount', 'gross_amount', 'unit_price', 'net_total', 'tax_total', 'gross_total'];
-                            if (typeof productValue === 'number' && numericCols.some(nc => colKey.toLowerCase().includes(nc))) {
-                                return `${colKey}: ${productValue.toFixed(2)} ${currency}`.trim();
-                            }
                             const percentageCols = ['tax_percent', 'discount_percent'];
-                            if (typeof productValue === 'number' && percentageCols.some(pc => colKey.toLowerCase().includes(pc))) {
-                                return `${colKey}: ${productValue}`;
+                            const quantityCols = ['quantity', 'qty', 'menge', 'anzahl', 'cantitate'];
+
+
+                            if (quantityCols.some(qc => colKey.toLowerCase().includes(qc))) {
+                                const numVal = parseFloat(String(productValue).replace(',','.'));
+                                return `${colKey}: ${isNaN(numVal) ? productValue : numVal}`;
+                            }
+                            if (typeof productValue === 'number') {
+                                if (numericCols.some(nc => colKey.toLowerCase().includes(nc))) {
+                                    return `${colKey}: ${productValue.toFixed(2)} ${currency}`.trim();
+                                }
+                                if (percentageCols.some(pc => colKey.toLowerCase().includes(pc))) {
+                                    return `${colKey}: ${productValue}`;
+                                }
                             }
                             return `${colKey}: ${String(productValue).replace(/"/g, '""')}`;
                         });
-                        return summaryParts.join(' | ');
+                        return `(${summaryParts.join(' | ')})`;
                     }).join('; '); 
                 }
-                if ((schemaField.type === 'number' || schemaField.key === 'totalPrice') && typeof value === 'number') {
+                if ((schemaField.type === 'number' || schemaField.key === 'totalPrice' || schemaField.key === 'subtotal' || schemaField.key === 'totalDiscountAmount' || schemaField.key === 'totalTaxAmount') && typeof value === 'number') {
                     return `${value.toFixed(2)} ${item.extractedValues.currency || ''}`.trim();
                 }
                 if (value === undefined || value === null) return '';
@@ -640,17 +721,20 @@ export default function Home() {
               <div className="space-y-2">
                 <Label htmlFor="upload-template-select" className="text-sm font-medium text-foreground">Șablon Extragere Linii Produse (Aplicat la Upload)</Label>
                  <Select
-                    value={uploadTemplateId || "none"} 
-                    onValueChange={(value) => setUploadTemplateId(value === 'none' ? null : value)}
+                    value={uploadTemplateId || aiStandardUploadTemplate.id} 
+                    onValueChange={(value) => setUploadTemplateId(value === aiStandardUploadTemplate.id ? aiStandardUploadTemplate.id : value)}
                   >
                   <SelectTrigger id="upload-template-select" className="rounded-md">
-                    <SelectValue placeholder="Extragere AI standard" />
+                    <SelectValue placeholder="Selectați un șablon de upload" />
                   </SelectTrigger>
                   <SelectContent className="rounded-md">
                     <SelectGroup>
                       <SelectLabel>Șabloane Disponibile pentru Extragere</SelectLabel>
-                      <SelectItem value="none">Extragere AI Standard (item_code, name, quantity, price, amount)</SelectItem>
-                      {templates.filter(t => !t.isDefault).map(template => ( 
+                      {/* AI Standard is always an option, even if not in custom templates list as 'editable' */}
+                       <SelectItem value={aiStandardUploadTemplate.id}>
+                          {aiStandardUploadTemplate.name} ({aiStandardUploadTemplate.columns.join(', ')})
+                        </SelectItem>
+                      {templates.filter(t => t.forUpload && t.id !== aiStandardUploadTemplate.id).map(template => ( 
                         <SelectItem key={template.id} value={template.id}>
                           {template.name} ({template.columns.join(', ')})
                         </SelectItem>
@@ -659,7 +743,7 @@ export default function Home() {
                   </SelectContent>
                 </Select>
                  <p className="text-xs text-muted-foreground">
-                  Ghidează AI-ul ce coloane specifice să caute pentru liniile de produse. Șablonul "Comprehensive" încearcă să găsească mai multe detalii.
+                  Ghidează AI-ul ce coloane specifice să caute pentru liniile de produse. Șablonul "{comprehensiveUploadTemplate.name}" încearcă să găsească mai multe detalii.
                 </p>
               </div>
               <Button variant="outline" className="w-full rounded-md" onClick={() => setIsTemplateManagerOpen(true)}>
@@ -702,8 +786,8 @@ export default function Home() {
                     <SelectContent className="rounded-md">
                        <SelectGroup>
                         <SelectLabel>Șabloane pentru Coloane Produs la Export</SelectLabel>
-                        {templates.length === 0 && <SelectItem value="none" disabled>Nu sunt șabloane definite</SelectItem>}
-                        {templates.map(template => (
+                        {!templates.some(t => !t.forUpload) && <SelectItem value="none" disabled>Nu sunt șabloane de export definite</SelectItem>}
+                        {templates.filter(t => !t.forUpload).map(template => (
                           <SelectItem key={template.id} value={template.id}>
                             {template.name} ({template.columns.join(', ')})
                           </SelectItem>
@@ -744,4 +828,3 @@ export default function Home() {
     </div>
   );
 }
-

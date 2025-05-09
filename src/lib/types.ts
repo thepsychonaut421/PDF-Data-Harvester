@@ -4,6 +4,7 @@ export type PdfStatus = 'pending' | 'uploading' | 'processing' | 'processed' | '
 export interface Product {
   item_code?: string | null; 
   name?: string | null; 
+  description?: string | null; // Added for comprehensive template
   quantity?: number | string | null; 
   unit?: string | null;
   price?: number | string | null; // Unit price
@@ -13,6 +14,10 @@ export interface Product {
   tax_percent?: number | string | null;
   tax_amount?: number | string | null; // Line item tax amount
   amount?: number | string | null; // Line item gross amount (total for the line)
+  // For user-specific ERPNext export:
+  item_group?: string | null; // Will be "Produkt"
+  stock_uom?: string | null; // Will be derived from unit or "Stk"
+
   [key: string]: any; 
 }
 
@@ -88,5 +93,5 @@ export interface InvoiceTemplate {
   name: string;
   columns: string[]; 
   isDefault?: boolean; 
+  forUpload?: boolean; // True if template is for guiding AI at upload, false if for CSV export formatting
 }
-
