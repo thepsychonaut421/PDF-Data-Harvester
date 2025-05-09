@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import DataTable from './data-table';
 import type { ExtractedDataItem, AppSchema, PdfStatus, InvoiceTemplate } from '@/lib/types';
-import { Download, Filter, Search, AlertTriangle, CheckCircle2, XCircle, Loader2, ListFilter } from 'lucide-react';
+import { Download, Filter, Search, AlertTriangle, CheckCircle2, XCircle, Loader2, ListFilter, Trash } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -17,6 +17,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
 
 interface DataDashboardProps {
   data: ExtractedDataItem[];
@@ -24,6 +36,7 @@ interface DataDashboardProps {
   onUpdateItem: (item: ExtractedDataItem) => void;
   onDeleteItem: (itemId: string) => void; 
   onExportCsv: () => void;
+  onClearAllItems: () => void;
   isLoading?: boolean;
   selectedExportColumns: string[];
   onSelectedExportColumnsChange: (keys: string[]) => void;
@@ -35,7 +48,8 @@ const DataDashboard: FC<DataDashboardProps> = ({
   schema, 
   onUpdateItem, 
   onDeleteItem, 
-  onExportCsv, 
+  onExportCsv,
+  onClearAllItems,
   isLoading,
   selectedExportColumns,
   onSelectedExportColumnsChange,
@@ -52,12 +66,18 @@ const DataDashboard: FC<DataDashboardProps> = ({
       const searchString = [
         item.fileName,
         item.status,
-        templateNameToSearch, // Use derived template name
+        templateNameToSearch, 
         item.extractedValues.date,
         item.extractedValues.supplier,
         item.extractedValues.totalPrice,
         item.extractedValues.currency,
         item.extractedValues.documentLanguage,
+        item.extractedValues.invoiceNumber,
+        item.extractedValues.subtotal,
+        item.extractedValues.totalDiscountAmount,
+        item.extractedValues.totalTaxAmount,
+        item.extractedValues.paymentTerms,
+        item.extractedValues.dueDate,
         ...(item.extractedValues.products?.map(p => {
             return Object.values(p).join(' ');
         }) || [])
@@ -67,7 +87,7 @@ const DataDashboard: FC<DataDashboardProps> = ({
       const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
       return matchesSearchTerm && matchesStatus;
     });
-  }, [data, searchTerm, statusFilter, templates]); // Add templates to dependency array
+  }, [data, searchTerm, statusFilter, templates]); 
   
   const processedCount = useMemo(() => data.filter(item => item.status === 'processed').length, [data]);
   const validationCount = useMemo(() => data.filter(item => item.status === 'needs_validation').length, [data]);
@@ -76,7 +96,7 @@ const DataDashboard: FC<DataDashboardProps> = ({
 
 
   return (
-    <Card className="shadow-lg w-full">
+    <Card className="shadow-lg w-full rounded-xl">
       <CardHeader>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
@@ -86,12 +106,12 @@ const DataDashboard: FC<DataDashboardProps> = ({
           <div className="flex flex-wrap gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline">
+                <Button variant="outline" className="rounded-md">
                   <ListFilter className="mr-2 h-4 w-4" />
                   Coloane Export
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[250px]">
+              <DropdownMenuContent align="end" className="w-[250px] rounded-md">
                 <DropdownMenuLabel>Selectează Coloane pentru Export</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {schema.fields
@@ -115,16 +135,39 @@ const DataDashboard: FC<DataDashboardProps> = ({
             <Button 
               onClick={onExportCsv} 
               disabled={data.filter(item => item.status === 'processed' || item.status === 'needs_validation').length === 0 || selectedExportColumns.length === 0}
+              className="rounded-md"
             >
               <Download className="mr-2 h-4 w-4" />
               Exportă CSV
             </Button>
+             <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" disabled={data.length === 0} className="rounded-md">
+                  <Trash className="mr-2 h-4 w-4" />
+                  Șterge Tot
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="rounded-xl">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Sunteți sigur?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Această acțiune va șterge toate datele încărcate și procesate. Această acțiune nu poate fi anulată.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="rounded-md">Anulează</AlertDialogCancel>
+                  <AlertDialogAction onClick={onClearAllItems} className="rounded-md bg-destructive hover:bg-destructive/90">
+                    Șterge Tot
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <Card className="bg-success/10 border-success/50">
+            <Card className="bg-success/10 border-success/50 rounded-lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-success-foreground">Procesate</CardTitle>
                     <CheckCircle2 className="h-5 w-5 text-success" />
@@ -134,17 +177,17 @@ const DataDashboard: FC<DataDashboardProps> = ({
                     <p className="text-xs text-muted-foreground">fișiere</p>
                 </CardContent>
             </Card>
-             <Card className="bg-primary/10 border-primary/50">
+             <Card className="bg-primary/10 border-primary/50 rounded-lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-primary-foreground">În Procesare</CardTitle>
+                    <CardTitle className="text-sm font-medium text-primary">În Procesare</CardTitle>
                     <Loader2 className="h-5 w-5 text-primary animate-spin" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold text-primary-foreground">{processingCount}</div>
+                    <div className="text-2xl font-bold text-primary">{processingCount}</div>
                      <p className="text-xs text-muted-foreground">fișiere</p>
                 </CardContent>
             </Card>
-            <Card className="bg-warning/10 border-warning/50">
+            <Card className="bg-warning/10 border-warning/50 rounded-lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-warning-foreground">Necesită Validare</CardTitle>
                     <AlertTriangle className="h-5 w-5 text-warning" />
@@ -154,7 +197,7 @@ const DataDashboard: FC<DataDashboardProps> = ({
                     <p className="text-xs text-muted-foreground">fișiere</p>
                 </CardContent>
             </Card>
-            <Card className="bg-destructive/10 border-destructive/50">
+            <Card className="bg-destructive/10 border-destructive/50 rounded-lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-destructive-foreground">Erori</CardTitle>
                     <XCircle className="h-5 w-5 text-destructive" />
@@ -175,16 +218,16 @@ const DataDashboard: FC<DataDashboardProps> = ({
               placeholder="Caută în toate câmpurile..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-10 rounded-md"
             />
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <Select value={statusFilter} onValueChange={(value: PdfStatus | 'all') => setStatusFilter(value)}>
-              <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px] rounded-md">
                 <SelectValue placeholder="Filtrează după status" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-md">
                 <SelectItem value="all">Toate Statusurile</SelectItem>
                 <SelectItem value="pending">În așteptare</SelectItem>
                 <SelectItem value="uploading">Se încarcă</SelectItem>
