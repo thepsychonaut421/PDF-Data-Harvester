@@ -1,4 +1,5 @@
 
+
 export type PdfStatus = 'pending' | 'uploading' | 'processing' | 'processed' | 'needs_validation' | 'error';
 
 export interface Product {
@@ -82,8 +83,8 @@ export const defaultAppSchema: AppSchema = {
     { key: 'paymentTerms', label: 'Termeni Plată', type: 'text', editable: true },
     { key: 'products', label: 'Produse/Servicii (Sumar/Tabel)', type: 'products_list', editable: true, tooltip: 'Lista detaliată a liniilor de produse/servicii. Selectați pentru sumar în CSV sau pentru vizualizare tabel. Pentru export detaliat, selectați coloanele individuale de produs de mai jos.' },
 
-    { key: 'p_item_code', label: 'Produs: Cod Articol', type: 'text', editable: false, isProductField: true, tooltip: 'Codul articolului pentru fiecare produs (SKU, Part No.). Pentru export detaliat.' },
-    { key: 'p_name', label: 'Produs: Nume', type: 'text', editable: false, isProductField: true, tooltip: 'Numele fiecărui produs. Pentru export detaliat.' },
+    { key: 'p_item_code', label: 'Produs: Cod Articol', type: 'text', editable: false, isProductField: true, tooltip: 'Codul articolului pentru fiecare produs (SKU, Part No.). Pentru export detaliat ERPNext ca "Artikel-Code".' },
+    { key: 'p_name', label: 'Produs: Nume', type: 'text', editable: false, isProductField: true, tooltip: 'Numele fiecărui produs. Pentru export detaliat ERPNext ca "Artikelname".' },
     { key: 'p_description', label: 'Produs: Descriere', type: 'text', editable: false, isProductField: true, tooltip: 'Descrierea produsului, dacă e disponibilă și diferită de nume. Pentru export detaliat.'},
     { key: 'p_quantity', label: 'Produs: Cantitate', type: 'number', editable: false, isProductField: true, tooltip: 'Cantitatea pentru fiecare produs. Pentru export detaliat.' },
     { key: 'p_unit', label: 'Produs: Unitate Măsură', type: 'text', editable: false, isProductField: true, tooltip: 'Unitatea de măsură pentru fiecare produs. Pentru export detaliat.' },
@@ -95,12 +96,14 @@ export const defaultAppSchema: AppSchema = {
     { key: 'p_tax_amount', label: 'Produs: Valoare Taxă Linie', type: 'number', editable: false, isProductField: true, tooltip: 'Valoarea taxei (TVA) per linie de produs. Pentru export detaliat.' },
     { key: 'p_amount', label: 'Produs: Valoare Brută Linie', type: 'number', editable: false, isProductField: true, tooltip: 'Valoarea totală brută per linie de produs (net + taxă). Pentru export detaliat.' },
     
-    { key: 'p_item_name', label: 'Produs: Nume Articol (ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Numele articolului specific pentru ERPNext. Pentru export detaliat.' },
-    { key: 'p_qty', label: 'Produs: Cantitate (ERPNext)', type: 'number', editable: false, isProductField: true, tooltip: 'Cantitatea specifică pentru ERPNext. Pentru export detaliat.' },
-    { key: 'p_uom', label: 'Produs: UM (ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Unitatea de măsură specifică pentru ERPNext. Pentru export detaliat.' },
-    { key: 'p_rate', label: 'Produs: Rată/Preț (ERPNext)', type: 'number', editable: false, isProductField: true, tooltip: 'Rata sau prețul unitar specific pentru ERPNext. Pentru export detaliat.' },
-    { key: 'p_item_group', label: 'Produs: Grup Articole (ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Pentru export ERPNext, de obicei "Produkte". Pentru export detaliat.' },
-    { key: 'p_stock_uom', label: 'Produs: UM Stoc (ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Unitatea de măsură pentru stoc (ERPNext), derivată din unitatea produsului sau "Stk". Pentru export detaliat.' },
+    // Redundant with p_name, p_quantity, p_unit, p_price for generic export, but kept for schema completeness if needed elsewhere
+    { key: 'p_item_name', label: 'Produs: Nume Articol (Export ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Numele articolului specific pentru ERPNext. Derivat din "name" sau "description".' },
+    { key: 'p_qty', label: 'Produs: Cantitate (ERPNext)', type: 'number', editable: false, isProductField: true, tooltip: 'Cantitatea specifică pentru ERPNext. Derivat din "quantity".' },
+    { key: 'p_uom', label: 'Produs: UM (ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Unitatea de măsură specifică pentru ERPNext. Derivat din "unit".' },
+    { key: 'p_rate', label: 'Produs: Rată/Preț (ERPNext)', type: 'number', editable: false, isProductField: true, tooltip: 'Rata sau prețul unitar specific pentru ERPNext. Derivat din "price".' },
+    // Static columns for ERPNext export are handled in export logic, not selectable schema fields.
+    { key: 'p_item_group', label: 'Produs: Grup Articole (Export ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Pentru export ERPNext, valoare fixă "Produkte".' },
+    { key: 'p_stock_uom', label: 'Produs: UM Stoc (Export ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Unitatea de măsură pentru stoc (ERPNext), valoare fixă "Stk".' },
   ],
 };
 
@@ -122,14 +125,13 @@ export interface InvoiceTemplate {
 }
 
 // Default Templates Definitions
+
+// This template is kept for internal logic reference or potential future use, but ERPNext export is now fixed.
 export const erpNextDefaultTemplate: InvoiceTemplate = {
-  id: 'erpnext-article-default',
-  name: 'ERPNext Article Default (Export)',
-  // These columns are for potential AI guidance or generic display, 
-  // but the actual ERPNext export CSV for this template will have a fixed header:
-  // Artikel-Code, Artikelname, Artikelgruppe, Standardmaßeinheit
+  id: 'erpnext-article-default', // This ID might be referenced in old localStorage, keep it.
+  name: 'ERPNext Article Default (Legacy - Non-functional for export)',
   columns: ['item_code', 'item_name', 'qty', 'uom', 'rate', 'amount', 'item_group', 'stock_uom'], 
-  isDefault: true,
+  isDefault: false, // No longer a primary default for UI selection
   forUpload: false, 
 };
 
@@ -149,9 +151,10 @@ export const comprehensiveUploadTemplate: InvoiceTemplate = {
   forUpload: true,
 };
 
+// This template is kept for internal logic reference, but ERPNext export is now fixed.
 export const comprehensiveExportTemplate: InvoiceTemplate = {
   id: 'comprehensive-invoice-export-template',
-  name: 'Comprehensive Details (Export)',
+  name: 'Comprehensive Details (Legacy - Non-functional for ERPNext)',
   columns: ['item_code', 'name', 'description', 'quantity', 'unit', 'price', 'discount_value', 'discount_percent', 'net_amount', 'tax_percent', 'tax_amount', 'amount'],
   isDefault: false,
   forUpload: false,
@@ -159,9 +162,9 @@ export const comprehensiveExportTemplate: InvoiceTemplate = {
 
 export const erpNextExportFixedV1Template: InvoiceTemplate = {
   id: 'erpnext-export-fixed-v1',
-  name: 'ERPNext Export (Fixed: Artikel-Code, Name, Gruppe, ME)',
-  // These columns define the exact CSV header for this template when exported
+  name: 'ERPNext Export (Fixed: Artikel-Code, Artikelname, Produkte, Stk)',
+  // These columns define the actual CSV header for this template when exported
   columns: ['Artikel-Code', 'Artikelname', 'Artikelgruppe', 'Standardmaßeinheit'], 
-  isDefault: false,
+  isDefault: true, // This is now the primary "export" template shown
   forUpload: false,
 };

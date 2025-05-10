@@ -34,17 +34,18 @@ const fileToDataUri = (file: File): Promise<string> => {
 export default function Home() {
   const [extractedData, setExtractedData] = useState<ExtractedDataItem[]>([]);
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
-  const [selectedExportColumns, setSelectedExportColumns] = useState<string[]>(
-     MOCK_SCHEMA.fields.filter(field => field.key !== 'actions').map(field => field.key as string)
-  );
+  // For ERPNext fixed export, selectedExportColumns primarily affects UI display, not the final CSV structure for that export.
+  const [selectedExportColumns, setSelectedExportColumns] = useState<string[]>(['p_item_code', 'p_name']);
   const { toast } = useToast();
 
   const [templates, setTemplates] = useState<InvoiceTemplate[]>([]);
   const [uploadTemplateId, setUploadTemplateId] = useState<string | null>(aiStandardUploadTemplate.id); 
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
   
-  const [productExportFormat, setProductExportFormat] = useState<ProductExportFormat>('line_items'); // Default to 'line_items'
-  const [productLineExportTemplateId, setProductLineExportTemplateId] = useState<string | null>(erpNextDefaultTemplate.id); // Default to ERPNext
+  // Force "Detaliat" (line_items) format for ERPNext export
+  const [productExportFormat, setProductExportFormat] = useState<ProductExportFormat>('line_items'); 
+  // Force ERPNext fixed export template
+  const [productLineExportTemplateId, setProductLineExportTemplateId] = useState<string | null>(erpNextExportFixedV1Template.id);
 
   useEffect(() => {
     const storedData = localStorage.getItem('pdfHarvesterData');
@@ -60,22 +61,32 @@ export default function Home() {
         localStorage.removeItem('pdfHarvesterData');
       }
     }
+    
+    // Initialize selectedExportColumns to fixed values for ERPNext
+    const fixedExportSelection = ['p_item_code', 'p_name'];
     const storedSelectedColumns = localStorage.getItem('pdfHarvesterSelectedColumns');
     if (storedSelectedColumns) {
         try {
             const parsedColumns = JSON.parse(storedSelectedColumns);
+            // If stored columns differ, reset to fixed selection. This ensures UI consistency for ERPNext export.
             if (Array.isArray(parsedColumns) && parsedColumns.every(col => typeof col === 'string')) {
-                const validKeys = new Set(MOCK_SCHEMA.fields.map(f => f.key));
-                setSelectedExportColumns(parsedColumns.filter(col => validKeys.has(col as SchemaField['key'])));
-            } else { 
-                 setSelectedExportColumns(MOCK_SCHEMA.fields.filter(field => field.key !== 'actions').map(field => field.key as string));
+                 const sortedParsed = [...parsedColumns].sort();
+                 const sortedFixed = [...fixedExportSelection].sort();
+                 if (JSON.stringify(sortedParsed) !== JSON.stringify(sortedFixed)) {
+                    setSelectedExportColumns(fixedExportSelection);
+                 } else {
+                    setSelectedExportColumns(parsedColumns);
+                 }
+            } else {
+                 setSelectedExportColumns(fixedExportSelection);
             }
         } catch (error) {
-            setSelectedExportColumns(MOCK_SCHEMA.fields.filter(field => field.key !== 'actions').map(field => field.key as string));
+             setSelectedExportColumns(fixedExportSelection);
         }
-    } else { 
-        setSelectedExportColumns(MOCK_SCHEMA.fields.filter(field => field.key !== 'actions').map(field => field.key as string));
+    } else {
+        setSelectedExportColumns(fixedExportSelection);
     }
+
 
     const storedTemplates = localStorage.getItem('pdfHarvesterTemplates');
     let initialTemplates: InvoiceTemplate[] = [];
@@ -110,30 +121,10 @@ export default function Home() {
         setUploadTemplateId(defaultUploadTpl ? defaultUploadTpl.id : null);
     }
     
-    const storedProductExportFormat = localStorage.getItem('pdfHarvesterProductExportFormat') as ProductExportFormat | null;
-    setProductExportFormat(storedProductExportFormat === 'summary' || storedProductExportFormat === 'line_items' ? storedProductExportFormat : 'line_items');
+    // Forcing productExportFormat and productLineExportTemplateId
+    setProductExportFormat('line_items');
+    setProductLineExportTemplateId(erpNextExportFixedV1Template.id);
 
-
-    const storedProductLineExportTemplateId = localStorage.getItem('pdfHarvesterProductLineExportTemplateId');
-    const erpNextTemplateIsAvailable = initialTemplates.some(t => t.id === erpNextDefaultTemplate.id && !t.forUpload);
-
-    if (productExportFormat === 'line_items') {
-        if (storedProductLineExportTemplateId && initialTemplates.some(t => t.id === storedProductLineExportTemplateId && !t.forUpload && (t.id === erpNextDefaultTemplate.id || t.id === erpNextExportFixedV1Template.id ))) {
-             setProductLineExportTemplateId(storedProductLineExportTemplateId);
-        } else if (erpNextTemplateIsAvailable) {
-             setProductLineExportTemplateId(erpNextDefaultTemplate.id);
-        } else {
-            const fallbackExport = initialTemplates.find(t => t.id === erpNextExportFixedV1Template.id) || initialTemplates.find(t => !t.forUpload && t.isDefault) || initialTemplates.find(t => !t.forUpload);
-            setProductLineExportTemplateId(fallbackExport ? fallbackExport.id : null);
-        }
-    } else { // summary or other future formats
-        if (storedProductLineExportTemplateId && initialTemplates.some(t => t.id === storedProductLineExportTemplateId && !t.forUpload)) {
-            setProductLineExportTemplateId(storedProductLineExportTemplateId);
-        } else {
-             const fallbackExport = initialTemplates.find(t => !t.forUpload && t.isDefault) || initialTemplates.find(t => !t.forUpload);
-            setProductLineExportTemplateId(fallbackExport ? fallbackExport.id : null);
-        }
-    }
   }, []); 
 
   useEffect(() => {
@@ -145,23 +136,34 @@ export default function Home() {
             setUploadTemplateId(defaultUploadTpl ? defaultUploadTpl.id : null);
         }
 
-        const currentExportTemplateIsValid = productLineExportTemplateId && templates.some(t => t.id === productLineExportTemplateId && !t.forUpload);
-        if (!currentExportTemplateIsValid) {
-            const defaultExportTpl = templates.find(t => t.id === erpNextDefaultTemplate.id) || templates.find(t => t.id === erpNextExportFixedV1Template.id) || templates.find(t => !t.forUpload && t.isDefault) || templates.find(t => !t.forUpload);
-            setProductLineExportTemplateId(defaultExportTpl ? defaultExportTpl.id : null);
+        // Ensure the fixed ERPNext export template is selected if available
+        if (!templates.find(t => t.id === erpNextExportFixedV1Template.id && !t.forUpload)) {
+             // This case should ideally not happen if erpNextExportFixedV1Template is always added
+            const fallbackExport = templates.find(t => !t.forUpload && t.isDefault) || templates.find(t => !t.forUpload);
+            setProductLineExportTemplateId(fallbackExport ? fallbackExport.id : null);
+        } else {
+            setProductLineExportTemplateId(erpNextExportFixedV1Template.id);
         }
+
      } else {
         setProductLineExportTemplateId(null);
         setUploadTemplateId(null);
      }
-  }, [templates, uploadTemplateId, productLineExportTemplateId]);
+  }, [templates, uploadTemplateId]); // productLineExportTemplateId removed as it's fixed
 
   useEffect(() => {
     localStorage.setItem('pdfHarvesterData', JSON.stringify(extractedData));
   }, [extractedData]);
 
   useEffect(() => {
-    localStorage.setItem('pdfHarvesterSelectedColumns', JSON.stringify(selectedExportColumns));
+    // Always ensure selectedExportColumns are fixed for the ERPNext export scenario
+    const fixedSelection = ['p_item_code', 'p_name'];
+    const sortedCurrent = [...selectedExportColumns].sort();
+    const sortedFixed = [...fixedSelection].sort();
+    if (JSON.stringify(sortedCurrent) !== JSON.stringify(sortedFixed)) {
+        setSelectedExportColumns(fixedSelection);
+    }
+    localStorage.setItem('pdfHarvesterSelectedColumns', JSON.stringify(fixedSelection));
   }, [selectedExportColumns]);
   
   useEffect(() => {
@@ -173,46 +175,18 @@ export default function Home() {
   }, [uploadTemplateId]);
 
   useEffect(() => {
-    localStorage.setItem('pdfHarvesterProductExportFormat', productExportFormat);
-     if (productExportFormat === 'line_items' && (!productLineExportTemplateId || !templates.find(t => t.id === productLineExportTemplateId && (t.id === erpNextDefaultTemplate.id || t.id === erpNextExportFixedV1Template.id) ) ) ) {
-        const erpTemplate = templates.find(t => t.id === erpNextDefaultTemplate.id);
-        if (erpTemplate) {
-            setProductLineExportTemplateId(erpTemplate.id);
-        } else {
-             const fallbackErp = templates.find(t => t.id === erpNextExportFixedV1Template.id);
-             if (fallbackErp) setProductLineExportTemplateId(fallbackErp.id);
-        }
-    }
-  }, [productExportFormat, templates, productLineExportTemplateId]);
+    // productExportFormat is fixed to 'line_items'
+    localStorage.setItem('pdfHarvesterProductExportFormat', 'line_items');
+  }, []);
 
   useEffect(() => {
-    if (productLineExportTemplateId) {
-      localStorage.setItem('pdfHarvesterProductLineExportTemplateId', productLineExportTemplateId);
+    // productLineExportTemplateId is fixed to erpNextExportFixedV1Template.id
+    if (erpNextExportFixedV1Template.id) {
+      localStorage.setItem('pdfHarvesterProductLineExportTemplateId', erpNextExportFixedV1Template.id);
     } else {
       localStorage.removeItem('pdfHarvesterProductLineExportTemplateId');
     }
-  }, [productLineExportTemplateId]);
-
-  // Effect to auto-select columns when ERPNext Default Export template is chosen for detailed line item export
-  useEffect(() => {
-      if (productExportFormat === 'line_items' && productLineExportTemplateId === erpNextDefaultTemplate.id) {
-          const nonProductSelected = selectedExportColumns.filter(key =>
-              !MOCK_SCHEMA.fields.find(f => f.key === key)?.isProductField && key !== 'products'
-          );
-          const newSelection = Array.from(new Set([ // Use Set to avoid duplicates if nonProductSelected already contains these
-              ...nonProductSelected,
-              'p_item_code', 
-              'p_name'       
-          ]));
-          
-          const sortedCurrent = [...selectedExportColumns].sort();
-          const sortedNew = [...newSelection].sort();
-
-          if (JSON.stringify(sortedCurrent) !== JSON.stringify(sortedNew)) {
-              setSelectedExportColumns(newSelection);
-          }
-      }
-  }, [productExportFormat, productLineExportTemplateId, selectedExportColumns]);
+  }, []);
 
 
   const handleTemplatesChange = (updatedTemplates: InvoiceTemplate[]) => {
@@ -241,11 +215,8 @@ export default function Home() {
       const fallbackUpload = newTemplates.find(t => t.id === aiStandardUploadTemplate.id) || newTemplates.find(t => t.forUpload && t.isDefault) || newTemplates.find(t => t.forUpload);
       setUploadTemplateId(fallbackUpload ? fallbackUpload.id : null);
     }
-    const currentExportTemplate = newTemplates.find(t => t.id === productLineExportTemplateId && !t.forUpload);
-    if (!currentExportTemplate) {
-      const fallbackExport = newTemplates.find(t => t.id === erpNextDefaultTemplate.id) || newTemplates.find(t => t.id === erpNextExportFixedV1Template.id) || newTemplates.find(t => !t.forUpload && t.isDefault) || newTemplates.find(t => !t.forUpload);
-      setProductLineExportTemplateId(fallbackExport ? fallbackExport.id : null);
-    }
+    // productLineExportTemplateId is fixed, no need to update based on template changes here
+    setProductLineExportTemplateId(erpNextExportFixedV1Template.id);
   };
 
   const handleFileUploads = async (files: File[]) => {
@@ -417,18 +388,20 @@ export default function Home() {
     });
   }, [extractedData, toast]);
 
- const formatCsvCell = (value: any, delimiter: string = ';'): string => {
+ const formatCsvCell = (value: any, delimiter: string = ','): string => { // Default delimiter changed to comma
     if (value === undefined || value === null) return '';
     let stringValue = String(value);
     
-    if (delimiter === ';') {
-        if (typeof value === 'number' || (!isNaN(parseFloat(String(value).replace(',', '.'))))) {
-            const num = typeof value === 'number' ? value : parseFloat(String(value).replace(',', '.'));
-            if (!isNaN(num)) {
-                 stringValue = String(num).replace('.', ',');
-            }
-        }
-    }
+    // For ERPNext export (comma delimiter), ensure numbers use dot as decimal, not comma
+    // This specific handling for semicolon delimiter is less relevant if comma is fixed for ERPNext
+    // if (delimiter === ';') { 
+    //     if (typeof value === 'number' || (!isNaN(parseFloat(String(value).replace(',', '.'))))) {
+    //         const num = typeof value === 'number' ? value : parseFloat(String(value).replace(',', '.'));
+    //         if (!isNaN(num)) {
+    //              stringValue = String(num).replace('.', ',');
+    //         }
+    //     }
+    // }
     
     stringValue = stringValue.replace(/"/g, '""'); 
     if (stringValue.includes(delimiter) || stringValue.includes('\n') || stringValue.includes('"')) {
@@ -448,186 +421,66 @@ export default function Home() {
     let csvHeaders: string[] = [];
     let csvRows: string[][] = [];
     let csvContent = "";
-    let currentDelimiter = ';';
-    let useBOM = true;
+    let currentDelimiter = ','; // Fixed to comma for ERPNext
+    let useBOM = false; // Fixed to no BOM for ERPNext
 
-    const erpNextFixedExportTemplateId = 'erpnext-export-fixed-v1';
-    const erpNextArticleDefaultId = 'erpnext-article-default';
 
-    if (productExportFormat === 'line_items' && (productLineExportTemplateId === erpNextFixedExportTemplateId || productLineExportTemplateId === erpNextArticleDefaultId)) {
-        // ERPNext Specific Export (Fixed Columns for both 'erpnext-export-fixed-v1' and 'erpnext-article-default')
-        csvHeaders = ['Artikel-Code', 'Artikelname', 'Artikelgruppe', 'Standardmaßeinheit'];
-        currentDelimiter = ','; // Always comma for ERPNext
-        useBOM = false; // ERPNext typically prefers no BOM
+    // Always use ERPNext Fixed Export logic
+    csvHeaders = ['Artikel-Code', 'Artikelname', 'Artikelgruppe', 'Standardmaßeinheit'];
+    currentDelimiter = ','; 
+    useBOM = false;
 
-        const collectedProductRows: string[][] = [];
+    const collectedProductRows: string[][] = [];
 
-        relevantData.forEach(item => {
-            if (item.extractedValues.products && item.extractedValues.products.length > 0) {
-                item.extractedValues.products.forEach(product => {
-                    const itemCode = String(product.item_code || '').trim();
-                    
-                    const isValidErpNextItemCode = (code: string): boolean => {
-                      if (code === '') return false;
-                      // Allow numbers, potentially with a single dot.
-                      return /^\d*\.?\d+$/.test(code) && !isNaN(parseFloat(code.replace(',', '.')));
-                    };
-
-                    if (!isValidErpNextItemCode(itemCode)) {
-                        return; // Skip if item_code is not numeric for ERPNext
-                    }
-
-                    let artikelname = String(product.name || product.description || '').trim();
-                    // Clean text: replace newlines, tabs with a single space, then multiple spaces with a single space, then trim.
-                    artikelname = artikelname.replace(/[\n\r\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-
-                    const artikelGruppe = "Produkte"; // Static value
-                    const standardmasseinheit = "Stk"; // Static value
-
-                    collectedProductRows.push([
-                        itemCode,
-                        artikelname,
-                        artikelGruppe,
-                        standardmasseinheit
-                    ]);
-                });
-            }
-        });
-
-        collectedProductRows.sort((a, b) => {
-            const valA = a[0];
-            const valB = b[0];
-            const numA = parseFloat(valA.replace(',', '.'));
-            const numB = parseFloat(valB.replace(',', '.'));
-
-            if (!isNaN(numA) && !isNaN(numB)) {
-                if (numA !== numB) return numA - numB;
-            }
-            return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-        });
-        
-        // Rows are already strings, formatCsvCell will handle quoting if necessary for the cell content itself
-        csvRows = collectedProductRows.map(row => row.map(cell => formatCsvCell(cell, currentDelimiter)));
-
-    } else if (productExportFormat === 'line_items') {
-        currentDelimiter = ';';
-        useBOM = true;
-        const parentSchemaFields = MOCK_SCHEMA.fields.filter(
-            field => selectedExportColumns.includes(field.key as string) && !field.isProductField && field.key !=='products'
-        );
-        
-        let productSpecificHeaders: string[] = [];
-        const activeExportTemplate = productLineExportTemplateId ? templates.find(t => t.id === productLineExportTemplateId && !t.forUpload) : null;
-
-        if (activeExportTemplate) {
-            productSpecificHeaders = activeExportTemplate.columns;
-        } else {
-             const selectedProductSchemaFields = MOCK_SCHEMA.fields.filter(
-                field => selectedExportColumns.includes(field.key as string) && field.isProductField
-            );
-             productSpecificHeaders = selectedProductSchemaFields.map(field => MOCK_SCHEMA.fields.find(f => f.key === field.key)?.label.replace('Produs: ','') || field.key.substring(2) );
-        }
-        
-        csvHeaders = [...parentSchemaFields.map(field => field.label), ...productSpecificHeaders];
-        
-        if (parentSchemaFields.length === 0 && productSpecificHeaders.length === 0) {
-            toast({ title: "Nicio coloană selectată", description: "Selectați cel puțin o coloană de factură sau de produs pentru exportul detaliat.", variant: "warning" });
-            return;
-        }
-
-        relevantData.forEach(item => {
-            const parentRowPart = parentSchemaFields.map(schemaField => {
-                let value: any;
-                if (schemaField.key === 'fileName') value = item.fileName;
-                else if (schemaField.key === 'status') value = item.status;
-                else if (schemaField.key === 'activeTemplateName') {
-                    const template = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
-                    value = template ? template.name : 'AI Standard Ext.';
-                } else {
-                    value = item.extractedValues[schemaField.key as keyof ExtractedInvoiceValues];
+    relevantData.forEach(item => {
+        if (item.extractedValues.products && item.extractedValues.products.length > 0) {
+            item.extractedValues.products.forEach(product => {
+                const itemCode = String(product.item_code || '').trim();
+                
+                // Filter: Artikel-Code must be numeric (only digits as per ^\d+$)
+                if (!/^\d+$/.test(itemCode)) {
+                    return; 
                 }
-                return value; 
+
+                let artikelname = String(product.name || product.description || '').trim();
+                // Clean text: replace newlines, tabs with a single space, then multiple spaces with a single space, then trim.
+                artikelname = artikelname.replace(/[\n\r\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+                const artikelGruppe = "Produkte"; // Static value
+                const standardmasseinheit = "Stk"; // Static value
+
+                collectedProductRows.push([
+                    itemCode,
+                    artikelname,
+                    artikelGruppe,
+                    standardmasseinheit
+                ]);
             });
+        }
+    });
 
-            if (item.extractedValues.products && item.extractedValues.products.length > 0) {
-                item.extractedValues.products.forEach(product => {
-                    const productRowPart = productSpecificHeaders.map(headerNameOrKey => {
-                        let productKeyToFind = headerNameOrKey;
-                        if (activeExportTemplate) {
-                           productKeyToFind = headerNameOrKey; 
-                        } else {
-                           const schemaFieldForHeader = MOCK_SCHEMA.fields.find(f => f.label.replace('Produs: ','') === headerNameOrKey && f.isProductField);
-                           productKeyToFind = schemaFieldForHeader ? schemaFieldForHeader.key.substring(2) : headerNameOrKey; 
-                        }
-                        
-                        let value: any = product[productKeyToFind as keyof Product];
-                        return value;
-                    });
-                    csvRows.push([...parentRowPart.map(val => formatCsvCell(val, currentDelimiter)), ...productRowPart.map(val => formatCsvCell(val, currentDelimiter))]);
-                });
-            } else if (parentRowPart.length > 0 || productSpecificHeaders.length > 0) {
-                const emptyProductPart = productSpecificHeaders.map(() => '');
-                csvRows.push([...parentRowPart.map(val => formatCsvCell(val, currentDelimiter)), ...emptyProductPart]);
-            }
-        });
-    } else { // productExportFormat === 'summary'
-        currentDelimiter = ';';
-        useBOM = true;
-        const summaryExportSchemaFields = MOCK_SCHEMA.fields.filter(
-            field => selectedExportColumns.includes(field.key as string) && (field.key === 'products' || !field.isProductField)
-        );
-        csvHeaders = summaryExportSchemaFields.map(field => field.label);
-        
-        csvRows = relevantData.map(item => {
-            return summaryExportSchemaFields.map(schemaField => {
-                let value: any;
-                if (schemaField.key === 'fileName') value = item.fileName;
-                else if (schemaField.key === 'status') value = item.status;
-                else if (schemaField.key === 'activeTemplateName') {
-                    const template = item.activeTemplateId ? templates.find(t => t.id === item.activeTemplateId) : null;
-                    value = template ? template.name : 'AI Standard Ext.';
-                }
-                else value = item.extractedValues[schemaField.key as keyof ExtractedInvoiceValues];
-
-                if (schemaField.key === 'products' && Array.isArray(value)) {
-                     const activeUploadTemplate = item.activeTemplateId ? templates.find(t=> t.id === item.activeTemplateId && t.forUpload) : null;
-                     const summaryTemplateToUse = activeUploadTemplate || templates.find(t => t.id === aiStandardUploadTemplate.id) || comprehensiveUploadTemplate;
-                  
-                    return value.map((p: Product) => { 
-                        let summaryParts: string[] = [];
-                        const displayColumns = summaryTemplateToUse?.columns || ['item_code', 'name', 'quantity', 'price', 'amount'];
-                        
-                        summaryParts = displayColumns.map(colKey => {
-                            const productSchemaField = MOCK_SCHEMA.fields.find(f => f.key === `p_${colKey}` || f.key === colKey); 
-                            const displayColKeyLabel = productSchemaField ? productSchemaField.label.replace('Produs: ','') : colKey;
-                            let productValue = p[colKey as keyof Product];
-
-                            if (productValue === undefined || productValue === null) return `${displayColKeyLabel}: N/A`;
-                            
-                            if (typeof productValue === 'number') {
-                               return `${displayColKeyLabel}: ${String(productValue.toFixed(2)).replace('.', ',')}`;
-                            }
-                            return `${displayColKeyLabel}: ${String(productValue)}`;
-                        });
-                        return `(${summaryParts.join(' | ')})`;
-                    }).join('; '); 
-                }
-                return formatCsvCell(value, currentDelimiter);
-            });
-        });
-    }
+    // Sort by Artikel-Code (numerically)
+    collectedProductRows.sort((a, b) => {
+        const numA = parseInt(a[0], 10);
+        const numB = parseInt(b[0], 10);
+        // This handles cases where itemCode might not be purely numeric after all, though filter should prevent it
+        if (isNaN(numA) && isNaN(numB)) return a[0].localeCompare(b[0]);
+        if (isNaN(numA)) return 1; // Non-numeric strings last
+        if (isNaN(numB)) return -1; // Non-numeric strings last
+        return numA - numB;
+    });
     
-    if (csvRows.length === 0 && csvHeaders.length > 0 && relevantData.length > 0 && productLineExportTemplateId !== erpNextFixedExportTemplateId && productLineExportTemplateId !== erpNextArticleDefaultId) {
-        csvRows.push(csvHeaders.map(() => ''));
-    } else if (csvRows.length === 0 && (productLineExportTemplateId === erpNextFixedExportTemplateId || productLineExportTemplateId === erpNextArticleDefaultId) && relevantData.length > 0) {
+    csvRows = collectedProductRows.map(row => row.map(cell => formatCsvCell(cell, currentDelimiter)));
+    
+    if (csvRows.length === 0 && relevantData.length > 0) {
       // For ERPNext exports, if no products match criteria, export just headers
     }
-     else if (csvRows.length === 0 && csvHeaders.length === 0) {
+     else if (csvRows.length === 0 && csvHeaders.length === 0) { // Should not happen with fixed headers
          toast({ title: "Nicio dată de exportat", description: "Nu s-au găsit date conform selecțiilor pentru export.", variant: "warning" });
         return;
     }
 
-    if (useBOM) {
+    if (useBOM) { // Will be false for ERPNext
       csvContent += "\uFEFF"; 
     }
     csvContent += csvHeaders.map(header => formatCsvCell(header, currentDelimiter)).join(currentDelimiter) + "\n"; 
@@ -641,29 +494,24 @@ export default function Home() {
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    link.setAttribute("download", `date_extrase_pdf_${timestamp}.csv`);
+    link.setAttribute("download", `erpnext_import_produse_${timestamp}.csv`); // More specific name
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
     toast({
-      title: "Export CSV finalizat",
+      title: "Export CSV pentru ERPNext finalizat",
       description: "Datele au fost exportate cu succes.",
       variant: "success"
     });
-  }, [extractedData, toast, selectedExportColumns, templates, productExportFormat, productLineExportTemplateId]);
+  }, [extractedData, toast]); // Removed dependencies related to selectable columns/templates as they are now fixed
 
 
   const availableExportTemplates = useMemo(() => {
-    if (productExportFormat === 'line_items') {
-        // Only show ERPNext templates when 'line_items' is selected
-        return templates.filter(t => !t.forUpload && (t.id === erpNextDefaultTemplate.id || t.id === erpNextExportFixedV1Template.id));
-    }
-    // For 'summary' or other formats, show all non-upload templates (if any other formats are added later)
-    // For now, this primarily means if productExportFormat is not 'line_items', this dropdown is less relevant or shows all.
-    return templates.filter(t => !t.forUpload);
-  }, [templates, productExportFormat]);
+    // Only show the ERPNext fixed export template
+    return templates.filter(t => t.id === erpNextExportFixedV1Template.id && !t.forUpload);
+  }, [templates]);
 
   useEffect(() => {
     return () => {
@@ -723,54 +571,46 @@ export default function Home() {
           <div className="md:col-span-2 space-y-6">
             <Card className="shadow-lg rounded-xl">
               <CardHeader>
-                <CardTitle className="text-lg flex items-center"><FileSpreadsheet className="mr-2 h-5 w-5 text-primary"/>Opțiuni Export CSV</CardTitle>
+                <CardTitle className="text-lg flex items-center"><FileSpreadsheet className="mr-2 h-5 w-5 text-primary"/>Opțiuni Export CSV pentru ERPNext</CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="product-export-format-select">Format Export Produse</Label>
-                  <Select value={productExportFormat} onValueChange={(value) => setProductExportFormat(value as ProductExportFormat)}>
+                  <Select value={productExportFormat} disabled> {/* Disabled as it's fixed */}
                     <SelectTrigger id="product-export-format-select" className="rounded-md">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="rounded-md">
-                      <SelectItem value="summary">Sumar (Produsele într-o celulă per factură)</SelectItem>
-                      <SelectItem value="line_items">Detaliat (Fiecare produs pe rând nou - Recomandat ERPNext)</SelectItem>
+                      <SelectItem value="line_items">Detaliat (Fiecare produs pe rând nou - Fixat pentru ERPNext)</SelectItem>
                     </SelectContent>
                   </Select>
                    <p className="text-xs text-muted-foreground">
-                    Alegeți cum să fie formatate liniile de produse în CSV.
+                    Formatul este fixat pentru compatibilitate optimă cu ERPNext.
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="export-template-select">Șablon Coloane Produse (Pentru Export Detaliat)</Label>
+                  <Label htmlFor="export-template-select">Șablon Coloane Produse</Label>
                   <Select
                     value={productLineExportTemplateId || ''}
-                    onValueChange={(value) => setProductLineExportTemplateId(value === '' ? null : value)}
-                    disabled={productExportFormat !== 'line_items'}
+                    disabled /* Disabled as it's fixed */
                   >
                     <SelectTrigger id="export-template-select" className="rounded-md">
-                      <SelectValue placeholder="Selectați un șablon de export" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="rounded-md">
                        <SelectGroup>
-                        <SelectLabel>Șabloane pentru Formatare Coloane Produs</SelectLabel>
-                        {availableExportTemplates.length === 0 && productExportFormat === 'line_items' && <SelectItem value="no-export-tpl" disabled>Nu sunt șabloane de export definite pentru ERPNext.</SelectItem>}
-                        {availableExportTemplates.map(template => (
+                        <SelectLabel>Șablon pentru Formatare Coloane Produs</SelectLabel>
+                        {availableExportTemplates.map(template => ( // Should only show the fixed ERPNext template
                           <SelectItem key={template.id} value={template.id} title={template.columns.join(', ')}>
-                            {template.name} (Ex: {template.columns.slice(0,2).join(', ')+(template.columns.length > 2 ? '...' : '')})
+                            {template.name}
                           </SelectItem>
                         ))}
-                         {/* Show other templates if format is not line_items, or if more general line_items templates are added */}
-                        {productExportFormat !== 'line_items' && templates.filter(t => !t.forUpload && !availableExportTemplates.find(at => at.id === t.id)).map(template => (
-                             <SelectItem key={template.id} value={template.id} title={template.columns.join(', ')}>
-                                {template.name} (Ex: {template.columns.slice(0,2).join(', ')+(template.columns.length > 2 ? '...' : '')})
-                             </SelectItem>
-                        ))}
+                        {availableExportTemplates.length === 0 && <SelectItem value="no-fixed-export-tpl" disabled>Șablonul de export ERPNext (Fixed) nu este disponibil.</SelectItem>}
                       </SelectGroup>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    Activ doar pentru "Detaliat". Selectați un șablon ERPNext pentru compatibilitate.
+                    Șablonul este fixat pentru exportul ERPNext.
                   </p>
                 </div>
               </CardContent>
@@ -783,11 +623,11 @@ export default function Home() {
               onExportCsv={handleExportCsv}
               onClearAllItems={handleClearAllItems}
               isLoading={isProcessingFiles && extractedData.some(d => d.status === 'uploading' || d.status === 'processing')}
-              selectedExportColumns={selectedExportColumns}
-              onSelectedExportColumnsChange={setSelectedExportColumns}
+              selectedExportColumns={selectedExportColumns} // Still passed for UI display of these two columns
+              onSelectedExportColumnsChange={setSelectedExportColumns} // Setter might be less relevant now for product columns
               templates={templates}
-              productExportFormat={productExportFormat}
-              productLineExportTemplateId={productLineExportTemplateId}
+              productExportFormat={productExportFormat} // Fixed
+              productLineExportTemplateId={productLineExportTemplateId} // Fixed
             />
           </div>
         </div>

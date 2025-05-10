@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import DataTable from './data-table';
 import type { ExtractedDataItem, AppSchema, PdfStatus, InvoiceTemplate, SchemaField } from '@/lib/types';
-import { erpNextDefaultTemplate } from '@/lib/types'; // Import for ID comparison
+import { erpNextExportFixedV1Template } from '@/lib/types'; // Import for ID comparison
 import { Download, Filter, Search, AlertTriangle, CheckCircle2, XCircle, Loader2, ListFilter, Trash } from 'lucide-react';
 import {
   DropdownMenu,
@@ -40,11 +40,11 @@ interface DataDashboardProps {
   onExportCsv: () => void;
   onClearAllItems: () => void;
   isLoading?: boolean;
-  selectedExportColumns: string[];
-  onSelectedExportColumnsChange: (keys: string[]) => void;
+  selectedExportColumns: string[]; // Still used for UI, but fixed to ['p_item_code', 'p_name'] for ERPNext export
+  onSelectedExportColumnsChange: (keys: string[]) => void; // Setter may not be actively used by user for product columns
   templates: InvoiceTemplate[]; 
-  productExportFormat: 'summary' | 'line_items';
-  productLineExportTemplateId: string | null;
+  productExportFormat: 'summary' | 'line_items'; // Fixed to 'line_items'
+  productLineExportTemplateId: string | null; // Fixed to erpNextExportFixedV1Template.id
 }
 
 const DataDashboard: FC<DataDashboardProps> = ({ 
@@ -55,11 +55,11 @@ const DataDashboard: FC<DataDashboardProps> = ({
   onExportCsv,
   onClearAllItems,
   isLoading,
-  selectedExportColumns,
+  selectedExportColumns, // Expected to be ['p_item_code', 'p_name']
   onSelectedExportColumnsChange,
   templates,
-  productExportFormat,
-  productLineExportTemplateId,
+  productExportFormat, // Fixed
+  productLineExportTemplateId, // Fixed
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<PdfStatus | 'all'>('all');
@@ -100,16 +100,10 @@ const DataDashboard: FC<DataDashboardProps> = ({
   const errorCount = useMemo(() => data.filter(item => item.status === 'error').length, [data]);
   const processingCount = useMemo(() => data.filter(item => item.status === 'processing' || item.status === 'uploading').length, [data]);
 
-  const nonProductFields = schema.fields.filter(field => !field.isProductField && field.key !== 'actions' && field.key !== 'products');
-  const allProductFields = schema.fields.filter(field => field.isProductField && field.key !== 'actions');
-
-  const visibleProductFieldsForExportDropdown = useMemo(() => {
-    if (productExportFormat === 'line_items' && productLineExportTemplateId === erpNextDefaultTemplate.id) {
-        // For ERPNext Article Default, only allow selection of Cod Articol and Nume
-        return allProductFields.filter(field => field.key === 'p_item_code' || field.key === 'p_name');
-    }
-    return allProductFields; // Show all product fields for other cases
-  }, [allProductFields, productExportFormat, productLineExportTemplateId]);
+  // For ERPNext Fixed Export, the dropdown will only show these two, checked and disabled.
+  const erpNextFixedProductSchemaFields = schema.fields.filter(
+    field => field.isProductField && (field.key === 'p_item_code' || field.key === 'p_name')
+  );
 
 
   return (
@@ -118,89 +112,42 @@ const DataDashboard: FC<DataDashboardProps> = ({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <CardTitle className="text-xl text-primary">Rezultate Extragere</CardTitle>
-            <CardDescription>Vizualizați, editați și exportați datele extrase.</CardDescription>
+            <CardDescription>Vizualizați, editați și exportați datele extrase pentru ERPNext.</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="rounded-md">
+                <Button variant="outline" className="rounded-md" disabled> {/* Disabled as columns are fixed for ERPNext */}
                   <ListFilter className="mr-2 h-4 w-4" />
-                  Coloane Export
+                  Coloane Export (Fixe ERPNext)
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-[300px] rounded-md">
-                 <ScrollArea className="h-[400px]">
-                  <DropdownMenuLabel>Selectează Coloane Factură</DropdownMenuLabel>
-                  {nonProductFields.map(field => (
+                 <ScrollArea className="h-auto max-h-[400px]"> {/* Adjusted height */}
+                  <DropdownMenuLabel>Coloane Produs pentru Export ERPNext (Fixe)</DropdownMenuLabel>
+                  {erpNextFixedProductSchemaFields.map(field => (
                       <DropdownMenuCheckboxItem
                         key={field.key}
-                        checked={selectedExportColumns.includes(field.key as string)}
-                        onCheckedChange={(checked) => {
-                          const newSelectedColumns = checked
-                            ? [...selectedExportColumns, field.key as string]
-                            : selectedExportColumns.filter(key => key !== field.key);
-                          onSelectedExportColumnsChange(newSelectedColumns);
-                        }}
+                        checked={true} // Always checked for these fixed columns
+                        disabled={true} // Always disabled, not changeable by user
                       >
-                        {field.label}
+                        {field.label} 
+                        {field.key === 'p_item_code' && ' (devine Artikel-Code)'}
+                        {field.key === 'p_name' && ' (devine Artikelname)'}
                       </DropdownMenuCheckboxItem>
                     ))}
-                  <DropdownMenuCheckboxItem // Ensure 'products' (summary) field is selectable
-                        key={'products'}
-                        checked={selectedExportColumns.includes('products')}
-                        onCheckedChange={(checked) => {
-                          const newSelectedColumns = checked
-                            ? [...selectedExportColumns, 'products']
-                            : selectedExportColumns.filter(key => key !== 'products');
-                          onSelectedExportColumnsChange(newSelectedColumns);
-                        }}
-                      >
-                        {schema.fields.find(f => f.key === 'products')?.label || 'Produse (Sumar)'}
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel>Selectează Coloane Produs (pentru Export Detaliat)</DropdownMenuLabel>
-                   {visibleProductFieldsForExportDropdown.map(field => (
-                      <DropdownMenuCheckboxItem
-                        key={field.key}
-                        checked={selectedExportColumns.includes(field.key as string)}
-                        onCheckedChange={(checked) => {
-                          // For ERPNext default, if user tries to uncheck required, prevent or re-check?
-                          // For now, allow unchecking, but export logic will enforce. UI reflects user intent.
-                           const currentProductFieldKeys = visibleProductFieldsForExportDropdown.map(f => f.key);
-                           let newSelected = [...selectedExportColumns];
-
-                           if (checked) {
-                               newSelected.push(field.key as string);
-                           } else {
-                               newSelected = newSelected.filter(k => k !== field.key);
-                           }
-                           
-                           // If ERPNext template is active, ensure p_item_code and p_name are selected if any product field is.
-                           // Or simply let the useEffect in page.tsx handle the forced selection.
-                           // The current useEffect in page.tsx should enforce ['p_item_code', 'p_name'] + non-product fields.
-                           // So this local logic might not need to be too complex.
-                          onSelectedExportColumnsChange(newSelected);
-                        }}
-                         disabled={productExportFormat === 'line_items' && productLineExportTemplateId === erpNextDefaultTemplate.id && !(field.key === 'p_item_code' || field.key === 'p_name')}
-                      >
-                        {field.label}
-                      </DropdownMenuCheckboxItem>
-                    ))}
-                     {visibleProductFieldsForExportDropdown.length === 0 && productExportFormat === 'line_items' && (
-                        <DropdownMenuCheckboxItem disabled>
-                            Nicio coloană de produs disponibilă pentru acest șablon.
-                        </DropdownMenuCheckboxItem>
-                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">Alte coloane ("Artikelgruppe", "Standardmaßeinheit") sunt adăugate automat la export.</DropdownMenuLabel>
                  </ScrollArea>
               </DropdownMenuContent>
             </DropdownMenu>
             <Button 
               onClick={onExportCsv} 
-              disabled={data.filter(item => item.status === 'processed' || item.status === 'needs_validation').length === 0 || selectedExportColumns.length === 0}
+              disabled={data.filter(item => item.status === 'processed' || item.status === 'needs_validation').length === 0}
               className="rounded-md"
             >
               <Download className="mr-2 h-4 w-4" />
-              Exportă CSV
+              Exportă CSV (ERPNext)
             </Button>
              <AlertDialog>
               <AlertDialogTrigger asChild>
