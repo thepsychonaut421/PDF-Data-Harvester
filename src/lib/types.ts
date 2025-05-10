@@ -1,4 +1,5 @@
 
+
 export type PdfStatus = 'pending' | 'uploading' | 'processing' | 'processed' | 'needs_validation' | 'error';
 
 export interface Product {
@@ -17,6 +18,11 @@ export interface Product {
   // For user-specific ERPNext export:
   item_group?: string | null; 
   stock_uom?: string | null; 
+  item_name?: string | null; // ERPNext specific
+  qty?: number | string | null; // ERPNext specific
+  uom?: string | null; // ERPNext specific
+  rate?: number | string | null; // ERPNext specific
+
 
   [key: string]: any; 
 }
@@ -48,7 +54,7 @@ export interface ExtractedDataItem {
 }
 
 export interface SchemaField {
-  key: keyof ExtractedInvoiceValues | 'fileName' | 'status' | 'actions' | 'activeTemplateName' | `p_${keyof Product}`; 
+  key: keyof ExtractedInvoiceValues | 'fileName' | 'status' | 'actions' | 'activeTemplateName' | `p_${keyof Product}` | `p_item_name` | `p_qty` | `p_uom` | `p_rate`; // Added ERPNext specific product field keys
   label: string; 
   type: 'text' | 'number' | 'date' | 'products_list' | 'status' | 'actions'; 
   editable?: boolean; 
@@ -82,19 +88,24 @@ export const defaultAppSchema: AppSchema = {
 
     // Individual Product fields for detailed export selection
     { key: 'p_item_code', label: 'Produs: Cod Articol', type: 'text', editable: false, isProductField: true, tooltip: 'Codul articolului pentru fiecare produs (SKU, Part No.). Pentru export detaliat.' },
-    { key: 'p_name', label: 'Produs: Nume/Descriere', type: 'text', editable: false, isProductField: true, tooltip: 'Numele sau descrierea fiecărui produs. Pentru export detaliat.' },
-    { key: 'p_description', label: 'Produs: Descriere Extinsă', type: 'text', editable: false, isProductField: true, tooltip: 'Descrierea extinsă a produsului, dacă e disponibilă. Pentru export detaliat.'},
+    { key: 'p_name', label: 'Produs: Nume', type: 'text', editable: false, isProductField: true, tooltip: 'Numele fiecărui produs. Pentru export detaliat.' },
+    { key: 'p_description', label: 'Produs: Descriere', type: 'text', editable: false, isProductField: true, tooltip: 'Descrierea produsului, dacă e disponibilă și diferită de nume. Pentru export detaliat.'},
     { key: 'p_quantity', label: 'Produs: Cantitate', type: 'number', editable: false, isProductField: true, tooltip: 'Cantitatea pentru fiecare produs. Pentru export detaliat.' },
     { key: 'p_unit', label: 'Produs: Unitate Măsură', type: 'text', editable: false, isProductField: true, tooltip: 'Unitatea de măsură pentru fiecare produs. Pentru export detaliat.' },
-    { key: 'p_price', label: 'Produs: Preț Unitar Net', type: 'number', editable: false, isProductField: true, tooltip: 'Prețul unitar (preferabil net) pentru fiecare produs. Pentru export detaliat.' },
+    { key: 'p_price', label: 'Produs: Preț Unitar', type: 'number', editable: false, isProductField: true, tooltip: 'Prețul unitar (preferabil net) pentru fiecare produs. Pentru export detaliat.' },
     { key: 'p_discount_value', label: 'Produs: Valoare Discount Linie', type: 'number', editable: false, isProductField: true, tooltip: 'Valoarea discountului per linie de produs. Pentru export detaliat.' },
     { key: 'p_discount_percent', label: 'Produs: Procent Discount Linie', type: 'number', editable: false, isProductField: true, tooltip: 'Procentul de discount per linie de produs. Pentru export detaliat.' },
     { key: 'p_net_amount', label: 'Produs: Valoare Netă Linie', type: 'number', editable: false, isProductField: true, tooltip: 'Valoarea netă per linie de produs (cantitate * preț - discount). Pentru export detaliat.' },
     { key: 'p_tax_percent', label: 'Produs: Procent Taxă Linie', type: 'number', editable: false, isProductField: true, tooltip: 'Procentul de taxă (TVA) per linie de produs. Pentru export detaliat.' },
     { key: 'p_tax_amount', label: 'Produs: Valoare Taxă Linie', type: 'number', editable: false, isProductField: true, tooltip: 'Valoarea taxei (TVA) per linie de produs. Pentru export detaliat.' },
     { key: 'p_amount', label: 'Produs: Valoare Brută Linie', type: 'number', editable: false, isProductField: true, tooltip: 'Valoarea totală brută per linie de produs (net + taxă). Pentru export detaliat.' },
-    // ERPNext specific product fields for export selection
-    { key: 'p_item_group', label: 'Produs: Grup Articole (ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Pentru export ERPNext, de obicei "Produkt". Pentru export detaliat.' },
+    
+    // ERPNext specific product fields for export selection - ensuring all are covered
+    { key: 'p_item_name', label: 'Produs: Nume Articol (ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Numele articolului specific pentru ERPNext. Pentru export detaliat.' },
+    { key: 'p_qty', label: 'Produs: Cantitate (ERPNext)', type: 'number', editable: false, isProductField: true, tooltip: 'Cantitatea specifică pentru ERPNext. Pentru export detaliat.' },
+    { key: 'p_uom', label: 'Produs: UM (ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Unitatea de măsură specifică pentru ERPNext. Pentru export detaliat.' },
+    { key: 'p_rate', label: 'Produs: Rată/Preț (ERPNext)', type: 'number', editable: false, isProductField: true, tooltip: 'Rata sau prețul unitar specific pentru ERPNext. Pentru export detaliat.' },
+    { key: 'p_item_group', label: 'Produs: Grup Articole (ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Pentru export ERPNext, de obicei "Produkte". Pentru export detaliat.' },
     { key: 'p_stock_uom', label: 'Produs: UM Stoc (ERPNext)', type: 'text', editable: false, isProductField: true, tooltip: 'Unitatea de măsură pentru stoc (ERPNext), derivată din unitatea produsului sau "Stk". Pentru export detaliat.' },
   ],
 };
@@ -115,3 +126,4 @@ export interface InvoiceTemplate {
   isDefault?: boolean; 
   forUpload?: boolean; 
 }
+
