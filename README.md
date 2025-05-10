@@ -1,75 +1,133 @@
 # PDF Data Harvester
 
-A Next.js application built in Firebase Studio for extracting line‑item data from invoice PDFs and formatting it as CSV ready for import into ERPNext.
+A web application that extracts structured data from PDF invoices and exports it to CSV for seamless import into ERP systems like ERPNext.
 
-## Features
+Built with Next.js, Firebase Studio and GenKit AI for advanced PDF parsing and data transformation.
 
-* **Upload & Process**: Drag & drop invoice PDFs and run AI‑driven extraction.
-* **Configurable Export Templates**: Choose or fix the export template to match ERPNext's import schema.
-* **CSV Export**: Generate CSV with exactly the columns `Artikel-Code`, `Artikelname`, `Artikelgruppe`, `Standardmaßeinheit`.
-* **Data Cleaning**: Automatic trimming of whitespace, removal of newlines/tab characters, and filtering non‑numeric codes.
-* **Static Fields**: Automatically append `Artikelgruppe: Produkte` and `Standardmaßeinheit: Stk`.
-* **Sorting**: Output sorted by `Artikel-Code` ascending.
+---
 
-## Prerequisites
+## 🚀 Features
 
-* Node.js >= 18
-* Firebase CLI & account
-* Firebase Studio enabled
+* **AI‑powered extraction**: Use GenKit AI to identify and harvest invoice fields (invoice number, dates, supplier, totals).
+* **Customizable templates**: Define and manage extraction/export templates for different invoice layouts.
+* **CSV export**: Export detailed or summarized CSV files ready for ERPNext import.
+* **Batch processing**: Upload multiple PDFs and process them in bulk.
+* **Validation & cleaning**: Trim whitespace, normalize spacing, filter numeric codes, and ensure CSV columns match ERPNext requirements.
+* **Clear‑all**: Quickly reset uploads and templates.
 
-## Installation
+---
 
-1. Clone the repo:
+## 📦 Prerequisites
+
+* Node.js ≥ 18
+* npm (or Yarn)
+* A Firebase project (for hosting and Firestore)
+* GenKit AI credentials (Google AI key)
+
+---
+
+## ⚙️ Installation
+
+1. **Clone the repository**
 
    ```bash
    git clone https://github.com/thepsychonaut421/PDF-Data-Harvester.git
    cd PDF-Data-Harvester
    ```
-2. Install dependencies:
+
+2. **Install dependencies**
 
    ```bash
    npm install
+   # or yarn install
    ```
-3. Login to Firebase:
+
+3. **Configure environment variables**
+   Copy `.env.example` to `.env` and fill in your keys:
 
    ```bash
-   firebase login
-   ```
-4. Initialize or connect to your Firebase project:
-
-   ```bash
-   firebase init
+   cp .env.example .env
    ```
 
-## Usage
+   ```ini
+   NEXT_PUBLIC_FIREBASE_API_KEY=YOUR_API_KEY
+   FIREBASE_PROJECT_ID=your-project-id
+   GENKIT_GOOGLE_AI_KEY=your-google-ai-key
+   ```
 
-1. In Firebase Studio, open the **PDF Data Harvester** app.
-2. **Upload PDFs**: Drag invoice PDFs into the upload area and click **Încarcă și Proce­sează**.
-3. **Select Extract Template**:
+---
 
-   * Use **Comprehensive Details (Upload)** for AI‑driven line extraction.
-4. **Configure Export**:
+## 🛠️ Development
 
-   * Set **Format Export Produse** to **Detaliat (Fiecare produs pe rând nou)**.
-   * Choose the **ERPNext Export (Fixed: Artikel‑Code, Artikelname, Produkte, Stk)** template under **Șablon Coloane Produse**.
-   * Click **Coloane Export** and select only **Produs: Cod Articol** and **Produs: Nume**, renaming them to `Artikel-Code` and `Artikelname`.
-5. **Export CSV**: Hit **Exportă CSV (ERPNext)** to download a clean, ready‑to‑import CSV.
+* **Start the dev server**
 
-## Configuration Tips
+  ```bash
+  npm run dev
+  # opens at http://localhost:3000
+  ```
 
-* **Whitespace & Newlines**: The export pipeline automatically replaces `\n`, `\r`, or tabs with a single space and collapses multiple spaces.
-* **Filtering**: Only lines where `item_code` is purely numeric are included.
-* **Sorting**: The CSV is sorted by `Artikel-Code` ascending.
-* **Delimiter & Encoding**: The file is UTF‑8 (no BOM) with comma separators.
+* **GenKit AI dev watchers**
 
-## Contributing
+  ```bash
+  npm run genkit:dev      # run AI-powered development server
+  npm run genkit:watch    # AI prompt watcher
+  ```
 
-1. Fork the repository.
-2. Create a feature branch: `git checkout -b feature/YourFeature`.
-3. Commit your changes: `git commit -m "Add cool feature"`.
-4. Push to the branch: `git push origin feature/YourFeature`.
-5. Open a Pull Request.
+---
 
-## License
+## 🔨 Building & Production
 
-MIT © thepsychonaut421
+* **Build**
+
+  ```bash
+  npm run build
+  ```
+
+* **Preview production build**
+
+  ```bash
+  npm start
+  ```
+
+* **Deploy to Firebase Hosting**
+
+  ```bash
+  firebase deploy
+  ```
+
+---
+
+## 📐 Folder Structure
+
+```
+├── src/
+│   ├── ai/              # GenKit AI prompts and handlers
+│   ├── components/      # UI components (Radix, Tailwind)
+│   ├── lib/             # Types, utils, API wrappers
+│   ├── pages/           # Next.js pages (app router)
+│   └── styles/          # Global styles & Tailwind config
+├── public/              # Static assets
+├── docs/                # Design docs & wireframes
+├── .env.example         # Sample environment variables
+├── next.config.ts       # Next.js config (allowedDevOrigins, images)
+├── tailwind.config.ts   # Tailwind CSS config
+└── package.json         # Scripts & dependencies
+```
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/foo`)
+3. Commit your changes (`git commit -m "feat: add foo"`)
+4. Push to the branch (`git push origin feature/foo`)
+5. Open a Pull Request
+
+Please adhere to the existing code style and run `npm run lint` and `npm run typecheck` before submitting.
+
+---
+
+## 📝 License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
