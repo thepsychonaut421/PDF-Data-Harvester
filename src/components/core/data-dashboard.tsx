@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import DataTable from './data-table';
-import type { ExtractedDataItem, AppSchema, PdfStatus, InvoiceTemplate } from '@/lib/types';
+import type { ExtractedDataItem, AppSchema, PdfStatus, InvoiceTemplate, SchemaField } from '@/lib/types';
 import { Download, Filter, Search, AlertTriangle, CheckCircle2, XCircle, Loader2, ListFilter, Trash } from 'lucide-react';
 import {
   DropdownMenu,
@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 interface DataDashboardProps {
@@ -94,6 +95,9 @@ const DataDashboard: FC<DataDashboardProps> = ({
   const errorCount = useMemo(() => data.filter(item => item.status === 'error').length, [data]);
   const processingCount = useMemo(() => data.filter(item => item.status === 'processing' || item.status === 'uploading').length, [data]);
 
+  const nonProductFields = schema.fields.filter(field => !field.isProductField && field.key !== 'actions');
+  const productFields = schema.fields.filter(field => field.isProductField && field.key !== 'actions');
+
 
   return (
     <Card className="shadow-lg w-full rounded-xl">
@@ -111,25 +115,40 @@ const DataDashboard: FC<DataDashboardProps> = ({
                   Coloane Export
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[250px] rounded-md">
-                <DropdownMenuLabel>Selectează Coloane pentru Export</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {schema.fields
-                  .filter(field => field.key !== 'actions') 
-                  .map(field => (
-                    <DropdownMenuCheckboxItem
-                      key={field.key}
-                      checked={selectedExportColumns.includes(field.key as string)}
-                      onCheckedChange={(checked) => {
-                        const newSelectedColumns = checked
-                          ? [...selectedExportColumns, field.key as string]
-                          : selectedExportColumns.filter(key => key !== field.key);
-                        onSelectedExportColumnsChange(newSelectedColumns);
-                      }}
-                    >
-                      {field.label}
-                    </DropdownMenuCheckboxItem>
-                  ))}
+              <DropdownMenuContent align="end" className="w-[300px] rounded-md">
+                 <ScrollArea className="h-[400px]">
+                  <DropdownMenuLabel>Selectează Coloane Factură</DropdownMenuLabel>
+                  {nonProductFields.map(field => (
+                      <DropdownMenuCheckboxItem
+                        key={field.key}
+                        checked={selectedExportColumns.includes(field.key as string)}
+                        onCheckedChange={(checked) => {
+                          const newSelectedColumns = checked
+                            ? [...selectedExportColumns, field.key as string]
+                            : selectedExportColumns.filter(key => key !== field.key);
+                          onSelectedExportColumnsChange(newSelectedColumns);
+                        }}
+                      >
+                        {field.label}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Selectează Coloane Produs (pentru Export Detaliat)</DropdownMenuLabel>
+                   {productFields.map(field => (
+                      <DropdownMenuCheckboxItem
+                        key={field.key}
+                        checked={selectedExportColumns.includes(field.key as string)}
+                        onCheckedChange={(checked) => {
+                          const newSelectedColumns = checked
+                            ? [...selectedExportColumns, field.key as string]
+                            : selectedExportColumns.filter(key => key !== field.key);
+                          onSelectedExportColumnsChange(newSelectedColumns);
+                        }}
+                      >
+                        {field.label}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                 </ScrollArea>
               </DropdownMenuContent>
             </DropdownMenu>
             <Button 
